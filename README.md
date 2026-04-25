@@ -156,6 +156,26 @@ response = client.chat.completions.create(
 - 演示账号密码可通过环境变量覆盖
 - API Key 使用 `gw_live_sk_` 前缀，便于识别和管理
 
+## ❓ 常见问题
+
+### 浏览器里的 API 测试为什么失败？
+当前项目通过后端 `/api/test-provider` 代理测试，已解决浏览器 CORS 限制。
+
+### OpenAI/Anthropic API 连接超时？
+Cloudflare 边缘节点可能无法直接访问被墙的 API。解决方案：
+1. 使用国内镜像/中转服务
+2. 在供应商设置中配置 HTTP 代理
+3. 使用支持国内访问的供应商（DeepSeek/智谱/百川等）
+
+> ⚠️ Cloudflare Workers 运行在边缘节点，**不支持 SOCKS 代理**。
+> 如需访问被墙的 LLM API，请使用中转服务或配置 HTTP 代理。
+
+### 如何查看函数日志？
+Cloudflare Dashboard → Pages → 项目 → Functions → 查看日志
+
+### 如何绑定自定义域名？
+Cloudflare Dashboard → Pages → 项目 → Custom domains → Add domain
+
 ## 📄 License
 
 MIT
