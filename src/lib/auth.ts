@@ -5,9 +5,9 @@ export interface AuthUser {
   email: string | null;
 }
 
-// 默认演示账号 - 密码通过环境变量配置，避免硬编码
+// 默认演示账号 - 密码可通过环境变量覆盖
 const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || "admin@llmgateway.com";
-const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || "";
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || "demo123456";
 
 export async function signUp(email: string, password: string) {
   const { data, error } = await supabase.auth.signUp({ email, password });

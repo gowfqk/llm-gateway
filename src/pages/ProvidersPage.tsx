@@ -71,6 +71,42 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
   const [showProxy, setShowProxy] = useState(false);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchModelsError, setFetchModelsError] = useState<string | null>(null);
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [modelSearch, setModelSearch] = useState("");
+  const [showModelPicker, setShowModelPicker] = useState(false);
+
+  // Parse current selected models from formData
+  const selectedModels = formData.models.split(",").map((m) => m.trim()).filter(Boolean);
+
+  const toggleModelSelection = (modelId: string) => {
+    const current = selectedModels;
+    if (current.includes(modelId)) {
+      const updated = current.filter((m) => m !== modelId);
+      setFormData((prev) => ({ ...prev, models: updated.join(", ") }));
+    } else {
+      const updated = [...current, modelId];
+      setFormData((prev) => ({ ...prev, models: updated.join(", ") }));
+    }
+  };
+
+  const selectAllFiltered = () => {
+    const filtered = getFilteredModels();
+    const current = selectedModels;
+    const toAdd = filtered.filter((m) => !current.includes(m));
+    setFormData((prev) => ({ ...prev, models: [...current, ...toAdd].join(", ") }));
+  };
+
+  const deselectAllFiltered = () => {
+    const filtered = getFilteredModels();
+    const remaining = selectedModels.filter((m) => !filtered.includes(m));
+    setFormData((prev) => ({ ...prev, models: remaining.join(", ") }));
+  };
+
+  const getFilteredModels = () => {
+    if (!modelSearch) return fetchedModels;
+    const q = modelSearch.toLowerCase();
+    return fetchedModels.filter((m) => m.toLowerCase().includes(q));
+  };
 
   const fetchModelsFromApi = useCallback(async () => {
     if (!formData.baseUrl || !formData.apiKey) {
@@ -79,6 +115,9 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     }
     setFetchingModels(true);
     setFetchModelsError(null);
+    setFetchedModels([]);
+    setModelSearch("");
+    setShowModelPicker(false);
 
     try {
       const modelsUrl = formData.baseUrl.replace(/\/$/, "") + "/models";
@@ -107,25 +146,23 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
       }
 
       const data = result.data;
-      if (!data || !Array.isArray(data.data)) {
+      let modelIds: string[] = [];
+
+      if (data && Array.isArray(data.data)) {
+        // Standard OpenAI format: { data: [{ id: "model-name", ... }] }
+        modelIds = data.data.map((m: Record<string, unknown>) => (m.id as string) || "").filter(Boolean);
+      } else if (Array.isArray(data)) {
         // Some providers return models directly as array
-        const models = Array.isArray(data) ? data : [];
-        if (models.length === 0) {
-          setFetchModelsError("该供应商未返回模型列表，请手动填写");
-          return;
-        }
-        const modelIds = models.map((m: Record<string, unknown>) => (m.id as string) || (m.name as string) || "").filter(Boolean);
-        setFormData((prev) => ({ ...prev, models: modelIds.join(", ") }));
+        modelIds = data.map((m: Record<string, unknown>) => (m.id as string) || (m.name as string) || "").filter(Boolean);
+      }
+
+      if (modelIds.length === 0) {
+        setFetchModelsError("该供应商未返回模型列表，请手动填写");
         return;
       }
 
-      // Standard OpenAI format: { data: [{ id: "model-name", ... }] }
-      const modelIds = data.data.map((m: Record<string, unknown>) => (m.id as string) || "").filter(Boolean);
-      if (modelIds.length === 0) {
-        setFetchModelsError("模型列表为空，请手动填写");
-        return;
-      }
-      setFormData((prev) => ({ ...prev, models: modelIds.join(", ") }));
+      setFetchedModels(modelIds);
+      setShowModelPicker(true);
     } catch (err) {
       setFetchModelsError("连接失败，请检查 Base URL");
     } finally {
@@ -141,6 +178,10 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     setEditingProvider(null);
     setFormData({ name: "", type: "custom", baseUrl: "", apiKey: "", models: "", rateLimit: "", proxyEnabled: false, proxyType: "none", proxyHost: "", proxyPort: "", proxyUser: "", proxyPass: "" });
     setShowProxy(false);
+    setFetchedModels([]);
+    setModelSearch("");
+    setShowModelPicker(false);
+    setFetchModelsError(null);
     setDialogOpen(true);
   };
 
@@ -158,6 +199,10 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
       proxyPass: proxy?.password || "",
     });
     setShowProxy(!!proxy?.enabled);
+    setFetchedModels([]);
+    setModelSearch("");
+    setShowModelPicker(false);
+    setFetchModelsError(null);
     setDialogOpen(true);
   };
 
@@ -611,7 +656,54 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
                     <AlertCircle className="w-3 h-3" />{fetchModelsError}
                   </p>
                 )}
-                <Textarea value={formData.models} onChange={(e) => { setFormData((prev) => ({ ...prev, models: e.target.value })); setFetchModelsError(null); }} placeholder="gpt-4o, gpt-4o-mini（逗号分隔）或点击「自动获取」" rows={3} />
+                {selectedModels.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {selectedModels.map((m) => (
+                      <Badge key={m} variant="secondary" className="text-xs cursor-pointer hover:bg-destructive/10 hover:text-destructive" onClick={() => toggleModelSelection(m)}>
+                        {m} ×
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {showModelPicker && fetchedModels.length > 0 && (
+                  <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={modelSearch}
+                        onChange={(e) => setModelSearch(e.target.value)}
+                        placeholder="搜索模型..."
+                        className="h-8 text-xs"
+                      />
+                      <Button variant="outline" size="sm" onClick={selectAllFiltered} className="h-7 text-xs whitespace-nowrap">全选</Button>
+                      <Button variant="outline" size="sm" onClick={deselectAllFiltered} className="h-7 text-xs whitespace-nowrap">取消全选</Button>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      找到 {getFilteredModels().length} 个模型，已选 {selectedModels.length} 个
+                    </div>
+                    <div className="max-h-48 overflow-y-auto space-y-0.5">
+                      {getFilteredModels().map((modelId) => (
+                        <label
+                          key={modelId}
+                          className={cn(
+                            "flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-xs transition-colors",
+                            selectedModels.includes(modelId)
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
+                              : "hover:bg-muted"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedModels.includes(modelId)}
+                            onChange={() => toggleModelSelection(modelId)}
+                            className="rounded"
+                          />
+                          <span className="truncate">{modelId}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <Textarea value={formData.models} onChange={(e) => { setFormData((prev) => ({ ...prev, models: e.target.value })); setFetchModelsError(null); }} placeholder="手动输入模型（逗号分隔），或点击「自动获取」从 API 拉取" rows={2} />
               </div>
               <div className="space-y-2">
                 <Label>速率限制 (请求/分钟)</Label>
