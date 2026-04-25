@@ -14,6 +14,59 @@ export const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
+// --- Cloudflare Workers 同源请求限制 ---
+// Cloudflare Workers 无法直接 fetch 同在 Cloudflare 网络上的域名，会返回 403 Forbidden
+// 这些域名需要在请求时添加特殊处理或通过代理转发
+const CF_BLOCKED_DOMAINS = [
+  "api.groq.com",
+  "groq.com",
+];
+
+function isCfBlockedDomain(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    return CF_BLOCKED_DOMAINS.some(d => hostname === d || hostname.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 网关级别的 fetch — 处理 Cloudflare Workers 的同源限制
+ * 对于被限制的域名，检测 403 并返回明确错误信息
+ */
+export async function gatewayFetch(url, options) {
+  const response = await fetch(url, options);
+  
+  // Cloudflare Workers 对 CF 网络上的域名返回 403
+  if (response.status === 403 && isCfBlockedDomain(url)) {
+    // 读取原始 403 响应体
+    let originalBody = "";
+    try {
+      originalBody = await response.text();
+    } catch {}
+    
+    // 创建新的错误响应，保持原始格式
+    const errorResponse = new Response(
+      JSON.stringify({
+        error: {
+          message: "Cloudflare Workers 无法直接访问此域名。请将供应商的 Base URL 改为中转/镜像地址，或配置 HTTP 代理。",
+          type: "cf_same_origin_error",
+          code: "cf_workers_403",
+          original_status: 403,
+        }
+      }),
+      {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+    return errorResponse;
+  }
+  
+  return response;
+}
+
 // --- JSON 响应工具 ---
 export function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -450,7 +503,7 @@ export async function handleStreamRequest(upstreamUrl, upstreamHeaders, upstream
 
   let upstreamResp;
   try {
-    upstreamResp = await fetch(upstreamUrl, {
+    upstreamResp = await gatewayFetch(upstreamUrl, {
       method: "POST",
       headers: upstreamHeaders,
       body: JSON.stringify(upstreamBody),

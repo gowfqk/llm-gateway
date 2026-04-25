@@ -9,7 +9,7 @@ import {
   validateApiKey, getProviders, getRoutes,
   resolveProvider, buildUpstreamUrl, buildUpstreamHeaders,
   buildUpstreamBody, convertAnthropicResponse, convertGoogleResponse,
-  handleStreamRequest, logUsage,
+  handleStreamRequest, logUsage, gatewayFetch,
 } from "../_lib.js";
 
 export async function onRequestPost(context) {
@@ -61,7 +61,7 @@ export async function onRequestPost(context) {
 
     let upstreamResp;
     try {
-      upstreamResp = await fetch(upstreamUrl, {
+      upstreamResp = await gatewayFetch(upstreamUrl, {
         method: "POST",
         headers: upstreamHeaders,
         body: JSON.stringify(upstreamBody),
