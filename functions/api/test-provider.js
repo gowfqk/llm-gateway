@@ -13,16 +13,8 @@ export async function onRequestPost(context) {
     "Access-Control-Max-Age": "86400",
   };
 
-  // Handle preflight
-  if (request.method === "OPTIONS") {
-    return new Response(null, { 
-      status: 204,
-      headers: corsHeaders 
-    });
-  }
-
   try {
-    const { url, headers: clientHeaders, body, providerName } = await request.json();
+    const { url, headers: clientHeaders, body, method, providerName } = await request.json();
 
     if (!url) {
       return new Response(
@@ -44,14 +36,20 @@ export async function onRequestPost(context) {
       }
     }
 
+    const fetchMethod = method || "POST";
+    const fetchOptions = {
+      method: fetchMethod,
+      headers: fetchHeaders,
+    };
+    // Only include body for non-GET requests
+    if (fetchMethod !== "GET" && body) {
+      fetchOptions.body = JSON.stringify(body);
+    }
+
     const startTime = Date.now();
     
     // Make the actual request to the provider API (server-side, no CORS)
-    const response = await fetch(url, {
-      method: "POST",
-      headers: fetchHeaders,
-      body: JSON.stringify(body),
-    });
+    const response = await fetch(url, fetchOptions);
 
     const latency = Date.now() - startTime;
 
@@ -63,33 +61,46 @@ export async function onRequestPost(context) {
       responseData = { raw: await response.text() };
     }
 
+    if (!response.ok) {
+      const errorMsg = responseData?.error?.message || responseData?.error || responseData?.message || `HTTP ${response.status}`;
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          status: response.status,
+          latency,
+          error: errorMsg,
+          data: responseData,
+        }),
+        { 
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
+        }
+      );
+    }
+
     return new Response(
       JSON.stringify({
-        ok: response.ok,
+        ok: true,
         status: response.status,
         latency,
         data: responseData,
       }),
       { 
         status: 200,
-        headers: { 
-          "Content-Type": "application/json",
-          ...corsHeaders 
+        headers: { "Content-Type": "application/json", ...corsHeaders }
         }
-      }
-    );
+      );
   } catch (error) {
     return new Response(
       JSON.stringify({ 
         ok: false, 
-        error: error.message,
-        latency: Date.now() - startTime 
+        error: error.message || String(error),
       }),
       { 
         status: 500,
         headers: { 
           "Content-Type": "application/json",
-          ...corsHeaders 
+          ...corsHeaders
         }
       }
     );

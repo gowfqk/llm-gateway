@@ -31,8 +31,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { saveProviderData, deleteProviderData, generateId } from "@/lib/store";
 import type { Provider, ProviderType, ProxyConfig } from "@/types";
-import { useState, Fragment, useEffect } from "react";
-import { Plus, Pencil, Trash2, Eye, EyeOff, Copy, Check, Sparkles, Loader2, TestTube, TestTube2, AlertCircle, Globe, ChevronDown, ChevronUp } from "lucide-react";
+import { useState, Fragment, useEffect, useCallback } from "react";
+import { Plus, Pencil, Trash2, Eye, EyeOff, Copy, Check, Sparkles, Loader2, TestTube, TestTube2, AlertCircle, Globe, ChevronDown, ChevronUp, Wand2 } from "lucide-react";
 import { useProviders } from "@/hooks/useData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isSupabaseConfigured } from "@/lib/supabase";
@@ -69,6 +69,69 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     proxyEnabled: false, proxyType: "none" as ProxyConfig["type"], proxyHost: "", proxyPort: "", proxyUser: "", proxyPass: "",
   });
   const [showProxy, setShowProxy] = useState(false);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchModelsError, setFetchModelsError] = useState<string | null>(null);
+
+  const fetchModelsFromApi = useCallback(async () => {
+    if (!formData.baseUrl || !formData.apiKey) {
+      setFetchModelsError("请先填写 Base URL 和 API Key");
+      return;
+    }
+    setFetchingModels(true);
+    setFetchModelsError(null);
+
+    try {
+      const modelsUrl = formData.baseUrl.replace(/\/$/, "") + "/models";
+      const headers: Record<string, string> = {
+        "Authorization": `Bearer ${formData.apiKey}`,
+      };
+
+      // Anthropic uses x-api-key header
+      if (formData.type === "anthropic") {
+        headers["x-api-key"] = formData.apiKey;
+        headers["anthropic-version"] = "2023-06-01";
+        delete headers["Authorization"];
+      }
+
+      const response = await fetch("/api/test-provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: modelsUrl, headers, body: null, method: "GET", providerName: formData.name || "unknown" }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        setFetchModelsError(result.error || `获取模型失败 (HTTP ${response.status})`);
+        return;
+      }
+
+      const data = result.data;
+      if (!data || !Array.isArray(data.data)) {
+        // Some providers return models directly as array
+        const models = Array.isArray(data) ? data : [];
+        if (models.length === 0) {
+          setFetchModelsError("该供应商未返回模型列表，请手动填写");
+          return;
+        }
+        const modelIds = models.map((m: Record<string, unknown>) => (m.id as string) || (m.name as string) || "").filter(Boolean);
+        setFormData((prev) => ({ ...prev, models: modelIds.join(", ") }));
+        return;
+      }
+
+      // Standard OpenAI format: { data: [{ id: "model-name", ... }] }
+      const modelIds = data.data.map((m: Record<string, unknown>) => (m.id as string) || "").filter(Boolean);
+      if (modelIds.length === 0) {
+        setFetchModelsError("模型列表为空，请手动填写");
+        return;
+      }
+      setFormData((prev) => ({ ...prev, models: modelIds.join(", ") }));
+    } catch (err) {
+      setFetchModelsError("连接失败，请检查 Base URL");
+    } finally {
+      setFetchingModels(false);
+    }
+  }, [formData.baseUrl, formData.apiKey, formData.type, formData.name]);
 
   useEffect(() => {
     loadGatewayConfig().then(setGatewayConfig);
@@ -536,8 +599,19 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
                 <Input value={formData.apiKey} onChange={(e) => setFormData((prev) => ({ ...prev, apiKey: e.target.value }))} placeholder="sk-..." type="password" />
               </div>
               <div className="space-y-2">
-                <Label>可用模型</Label>
-                <Textarea value={formData.models} onChange={(e) => setFormData((prev) => ({ ...prev, models: e.target.value }))} placeholder="gpt-4o, gpt-4o-mini（逗号分隔）" rows={2} />
+                <div className="flex items-center justify-between">
+                  <Label>可用模型</Label>
+                  <Button variant="outline" size="sm" onClick={fetchModelsFromApi} disabled={fetchingModels} className="h-7 text-xs gap-1.5">
+                    {fetchingModels ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                    {fetchingModels ? "获取中..." : "自动获取"}
+                  </Button>
+                </div>
+                {fetchModelsError && (
+                  <p className="text-xs text-red-500 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />{fetchModelsError}
+                  </p>
+                )}
+                <Textarea value={formData.models} onChange={(e) => { setFormData((prev) => ({ ...prev, models: e.target.value })); setFetchModelsError(null); }} placeholder="gpt-4o, gpt-4o-mini（逗号分隔）或点击「自动获取」" rows={3} />
               </div>
               <div className="space-y-2">
                 <Label>速率限制 (请求/分钟)</Label>
