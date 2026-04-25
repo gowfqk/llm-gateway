@@ -1,0 +1,12 @@
+# Supabase 配置
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# 或者使用 anon key（权限较低）
+# SUPABASE_ANON_KEY=your-anon-key
+
+# 可选：直接提供供应商配置（覆盖从数据库读取）
+# PROVIDERS_JSON=[{"id":"openai","name":"OpenAI","type":"openai","baseUrl":"https://api.openai.com/v1","apiKey":"sk-xxx","enabled":true,"models":["gpt-4o"],"createdAt":"2024-01-01T00:00:00Z"}]
+
+# 网关 API Keys（逗号分隔）
+GATEWAY_API_KEYS=gw_live_sk_your-api-key-here
