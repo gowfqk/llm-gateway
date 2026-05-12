@@ -183,7 +183,7 @@ export async function onRequestPut(context) {
     const result = await updateRecord(table, filters, body, env);
 
     if (result.error) {
-      return errorResponse(result.error, 500);
+      return errorResponse(result.error, result.status || 500);
     }
 
     return jsonResponse(result);
@@ -224,7 +224,7 @@ export async function onRequestPatch(context) {
     const result = await patchRecord(table, filters, body, env);
 
     if (result.error) {
-      return errorResponse(result.error, 500);
+      return errorResponse(result.error, result.status || 500);
     }
 
     return jsonResponse(result);
@@ -262,7 +262,7 @@ export async function onRequestDelete(context) {
   const result = await deleteRecord(table, filters, env);
 
   if (result.error) {
-    return errorResponse(result.error, 500);
+    return errorResponse(result.error, result.status || 500);
   }
 
   return jsonResponse({ message: "Deleted successfully", data: result });

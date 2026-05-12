@@ -6,7 +6,24 @@
  * - 供应商配置查询
  */
 
-import { corsHeaders, jsonResponse, errorResponse } from "../_shared/lib.js";
+// --- CORS 通用头 ---
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key",
+};
+
+// --- JSON 响应工具 ---
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", ...corsHeaders },
+  });
+}
+
+function errorResponse(message, status = 400) {
+  return jsonResponse({ error: { message, type: "invalid_request_error" } }, status);
+}
 
 // --- 从环境变量获取 Supabase 配置 ---
 function getSupabaseConfig(env) {
@@ -242,19 +259,34 @@ export async function createRecord(table, data, env) {
   return querySupabase(table, { body: data }, env, 'POST');
 }
 
+// 过滤条件安全校验：PUT/PATCH/DELETE 必须带至少一个过滤条件，
+// 否则 PostgREST 会按当前身份可见的行整表操作，导致数据丢失。
+function requireFilters(filters, method) {
+  if (!filters || typeof filters !== "object" || Object.keys(filters).length === 0) {
+    return { error: `${method} requires at least one filter (e.g. ?id=xxx). Refusing bulk ${method.toLowerCase()} without filters.`, status: 400 };
+  }
+  return null;
+}
+
 // --- 更新记录 (PUT) ---
 export async function updateRecord(table, filters, data, env) {
-  return querySupabase(table, { body: { ...data, ...filters } }, env, 'PUT');
+  const guard = requireFilters(filters, "PUT");
+  if (guard) return guard;
+  return querySupabase(table, { eq: filters, body: data }, env, 'PUT');
 }
 
 // --- 部分更新记录 (PATCH) ---
 export async function patchRecord(table, filters, data, env) {
-  return querySupabase(table, { body: { ...data, ...filters } }, env, 'PATCH');
+  const guard = requireFilters(filters, "PATCH");
+  if (guard) return guard;
+  return querySupabase(table, { eq: filters, body: data }, env, 'PATCH');
 }
 
 // --- 删除记录 (DELETE) ---
 export async function deleteRecord(table, filters, env) {
-  return querySupabase(table, { ...filters }, env, 'DELETE');
+  const guard = requireFilters(filters, "DELETE");
+  if (guard) return guard;
+  return querySupabase(table, { eq: filters }, env, 'DELETE');
 }
 
 // --- 导出 ---

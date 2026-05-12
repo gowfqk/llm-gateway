@@ -41,19 +41,19 @@ function App() {
           user ? <Navigate to="/" replace /> : <LoginPage onAuth={handleAuth} />
         } />
         <Route path="/" element={
-          user ? <DashboardPage onLogout={handleLogout} /> : <Navigate to="/login" replace />
+          user ? <DashboardPage onLogout={handleLogout} userEmail={user.email ?? ""} /> : <Navigate to="/login" replace />
         } />
         <Route path="/providers" element={
-          user ? <ProvidersPage onLogout={handleLogout} /> : <Navigate to="/login" replace />
+          user ? <ProvidersPage onLogout={handleLogout} userEmail={user.email ?? ""} /> : <Navigate to="/login" replace />
         } />
         <Route path="/routes" element={
-          user ? <RoutesPage onLogout={handleLogout} /> : <Navigate to="/login" replace />
+          user ? <RoutesPage onLogout={handleLogout} userEmail={user.email ?? ""} /> : <Navigate to="/login" replace />
         } />
         <Route path="/usage" element={
-          user ? <UsagePage onLogout={handleLogout} /> : <Navigate to="/login" replace />
+          user ? <UsagePage onLogout={handleLogout} userEmail={user.email ?? ""} /> : <Navigate to="/login" replace />
         } />
         <Route path="/settings" element={
-          user ? <SettingsPage onLogout={handleLogout} /> : <Navigate to="/login" replace />
+          user ? <SettingsPage onLogout={handleLogout} userEmail={user.email ?? ""} /> : <Navigate to="/login" replace />
         } />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
