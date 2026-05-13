@@ -5,14 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useState, useEffect } from "react";
-import { Key, Download, RefreshCw, Trash2, Cloud, Globe, Copy, Plus } from "lucide-react";
+import { Key, Download, RefreshCw, Trash2, Cloud, Copy, Plus } from "lucide-react";
 import { exportConfigurationData, importConfigurationData, clearUsageLogs } from "@/lib/store";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
   loadGatewayConfig,
   saveGatewayConfig,
-  getProxyUrl,
   generateGatewayApiKey,
   type GatewayConfig,
 } from "@/lib/gateway-config";
@@ -191,38 +190,6 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
             )}
 
             <p className="text-xs text-muted-foreground">建议按客户端或环境分别生成独立 Key，泄露时可单独删除或重置。</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="w-5 h-5" />
-              代理地址
-            </CardTitle>
-            <CardDescription>浏览器中的 API 测试请求将通过此地址转发，以避免跨域问题。</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              <Label>自定义代理 URL</Label>
-              <Input
-                value={gatewayConfig.proxyUrl}
-                onChange={(e) => setGatewayConfig((prev) => ({ ...prev, proxyUrl: e.target.value }))}
-                placeholder="例如：https://your-proxy.com/proxy"
-              />
-            </div>
-            <div className="space-y-1 text-xs text-muted-foreground">
-              <p>🔧 <strong>自定义</strong>：填写你自己的代理服务地址；留空则不使用自定义代理。</p>
-              <p className="font-mono bg-muted px-1.5 py-0.5 rounded mt-1 inline-block">
-                示例: https://your-server.com/proxy
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>当前使用：</span>
-              <code className="bg-muted px-1.5 py-0.5 rounded font-mono">
-                {getProxyUrl(gatewayConfig) || "未配置"}
-              </code>
-            </div>
           </CardContent>
         </Card>
 
