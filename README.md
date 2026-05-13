@@ -5,11 +5,13 @@
 ## ✨ 功能特性
 
 - **多供应商管理** — 支持 15+ LLM 供应商，包括 OpenAI、Anthropic、DeepSeek、智谱 AI、Groq 等
+- **Playground** — 内置交互式对话测试，流式输出、Markdown 渲染、会话持久化
 - **自动获取模型** — 从 `/v1/models` API 自动拉取可用模型，带搜索和勾选功能
-- **智能路由** — 按模型名称模式匹配，将请求路由到最优供应商
+- **智能路由** — 按模型名称模式匹配，将请求路由到最优供应商，支持 Fallback 重试
 - **用量追踪** — Token 计数、成本估算、请求延迟等完整用量统计
 - **API 连接测试** — 一键测试供应商 API 连通性，批量测试支持
-- **代理配置** — 每个供应商可独立配置 SOCKS5/HTTP 代理
+- **暗色模式** — 支持浅色/深色/跟随系统三种主题模式
+- **移动端适配** — 响应式侧边栏，移动端抽屉式导航
 - **OpenAI 兼容** — 完全兼容 OpenAI API 格式，现有客户端无需修改
 - **API Key 管理** — 生成 `gw_live_sk_*` 格式的网关 API Key，支持多 Key 管理
 - **云端同步** — Supabase 驱动，数据自动云端备份和多设备同步
@@ -18,7 +20,7 @@
 
 | 层 | 技术 |
 |---|---|
-| 前端 | React + TypeScript + shadcn/ui + Tailwind CSS |
+| 前端 | React + TypeScript + shadcn/ui + Tailwind CSS v4 |
 | 构建 | Vite |
 | 后端 | Cloudflare Pages Functions |
 | 数据库 | Supabase (PostgreSQL) |
@@ -29,32 +31,42 @@
 ```
 ├── functions/              # Cloudflare Pages Functions (后端)
 │   ├── api/
-│   │   ├── health.js       # 健康检查
-│   │   └── test-provider.js # 供应商 API 测试代理 (支持 GET)
+│   │   ├── config.js        # 运行时配置
+│   │   ├── health.js        # 健康检查
+│   │   └── test-provider.js # 供应商 API 测试代理
 │   ├── v1/
-│   │   ├── models.js       # /v1/models — 模型列表
+│   │   ├── models.js        # /v1/models — 模型列表
 │   │   ├── chat/
 │   │   │   └── completions.js # /v1/chat/completions — 聊天补全
-│   │   └── _lib.js         # 网关核心逻辑 (认证、路由、转发)
+│   │   └── _lib.js          # 网关核心逻辑 (认证、路由、转发、Token刷新)
 │   ├── rest/
-│   │   └── index.js        # /rest — API Key 管理 REST API
+│   │   ├── index.js         # /rest — API Key 管理 REST API
 │   │   └── _lib.js
 │   └── _shared/
-│   │   └── lib.js          # 共享工具
+│       └── lib.js           # 共享工具
 ├── src/                    # 前端 React 应用
 │   ├── pages/
-│   │   ├── DashboardPage.tsx    # 仪表盘
+│   │   ├── DashboardPage.tsx    # 仪表盘 (KPI + 图表)
+│   │   ├── PlaygroundPage.tsx   # 交互式对话测试
 │   │   ├── LoginPage.tsx        # 登录/注册
 │   │   ├── ProvidersPage.tsx    # 供应商管理
 │   │   ├── RoutesPage.tsx       # 路由规则
 │   │   ├── SettingsPage.tsx     # 系统设置
 │   │   └── UsagePage.tsx        # 用量统计
+│   ├── hooks/
+│   │   ├── useData.ts           # 数据 hooks
+│   │   ├── use-theme.tsx        # 暗色模式 hook
+│   │   └── use-mobile.tsx       # 移动端检测
+│   ├── components/
+│   │   ├── AppLayout.tsx        # 布局 (响应式侧边栏)
+│   │   ├── MarkdownContent.tsx  # 轻量 Markdown 渲染
+│   │   └── ui/                  # shadcn/ui 组件
 │   ├── lib/
 │   │   ├── auth.ts              # Supabase 认证
 │   │   ├── gateway-config.ts    # 网关配置
-│   │   ├── store.ts             # 数据持久化
+│   │   ├── store.ts             # 数据持久化 (Supabase + IndexedDB)
 │   │   └── supabase.ts          # Supabase 客户端
-│   └── components/              # UI 组件 (shadcn/ui)
+│   └── index.css                # 设计系统 token (支持暗色模式)
 ├── supabase/
 │   └── migrations/              # 数据库迁移脚本
 ├── wrangler.toml               # Cloudflare 配置
@@ -129,7 +141,7 @@ echo "your-value" | npx wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY --pr
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://api.122048.xyz/v1",
+    base_url="https://your-gateway.pages.dev/v1",
     api_key="gw_live_sk_your-key-here"
 )
 
@@ -144,31 +156,35 @@ response = client.chat.completions.create(
 | 端点 | 说明 |
 |---|---|
 | `GET /v1/models` | 获取所有可用模型列表 |
-| `POST /v1/chat/completions` | 聊天补全（OpenAI 兼容） |
+| `POST /v1/chat/completions` | 聊天补全（支持流式） |
 | `GET /api/health` | 网关健康检查 |
+| `GET /api/config` | 运行时配置（前端用） |
 | `POST /api/test-provider` | 供应商连通性测试 |
-| `GET /rest` | API Key 管理 REST API |
+
+## 🎨 界面预览
+
+- **仪表盘** — KPI 卡片 + 30 天趋势图 + 供应商分布饼图
+- **Playground** — 流式聊天界面，支持 System Prompt / Temperature / Max Tokens 调节
+- **供应商管理** — 卡片式列表，一键测试、批量操作
+- **路由规则** — 通配符模式匹配，拖拽优先级
+- **用量日志** — 可筛选、排序、分页的请求记录表
 
 ## 🔒 安全
 
 - 所有密钥通过 Cloudflare Secrets 管理，**不硬编码在代码中**
 - `.env` 和 `.dev.vars` 已在 `.gitignore` 中排除
-- 演示账号密码可通过环境变量覆盖
 - API Key 使用 `gw_live_sk_` 前缀，便于识别和管理
+- 网关 API Key 验证支持缓存，避免每次请求都查数据库
 
 ## ❓ 常见问题
 
-### 浏览器里的 API 测试为什么失败？
-当前项目通过后端 `/api/test-provider` 代理测试，已解决浏览器 CORS 限制。
+### Playground 怎么用？
+侧边栏点击「Playground」，选择模型后直接输入消息。会自动读取设置中的网关 API Key。
 
 ### OpenAI/Anthropic API 连接超时？
 Cloudflare 边缘节点可能无法直接访问被墙的 API。解决方案：
 1. 使用国内镜像/中转服务
-2. 在供应商设置中配置 HTTP 代理
-3. 使用支持国内访问的供应商（DeepSeek/智谱/百川等）
-
-> ⚠️ Cloudflare Workers 运行在边缘节点，**不支持 SOCKS 代理**。
-> 如需访问被墙的 LLM API，请使用中转服务或配置 HTTP 代理。
+2. 使用支持国内访问的供应商（DeepSeek/智谱/百川/硅基流动等）
 
 ### 如何查看函数日志？
 Cloudflare Dashboard → Pages → 项目 → Functions → 查看日志
