@@ -68,15 +68,20 @@ export async function gatewayFetch(url, options) {
 }
 
 // --- JSON 响应工具 ---
-export function jsonResponse(data, status = 200) {
+export function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders },
+    headers: { "Content-Type": "application/json", ...corsHeaders, ...extraHeaders },
   });
 }
 
-export function errorResponse(message, status = 400) {
-  return jsonResponse({ error: { message, type: "invalid_request_error" } }, status);
+export function errorResponse(message, status = 400, extraHeaders = {}) {
+  return jsonResponse({ error: { message, type: "invalid_request_error" } }, status, extraHeaders);
+}
+
+// --- 生成请求 ID ---
+export function generateRequestId() {
+  return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 // --- 从环境变量获取 Supabase 配置 ---
@@ -103,13 +108,54 @@ function parseStaticGatewayKeys(env) {
     .filter(Boolean);
 }
 
+// --- API Key 验证缓存 ---
+// Cloudflare Workers 的模块级变量在同一 isolate 内存活（通常 ~30s），
+// 可作为短期缓存避免每次请求都查 Supabase。
+const API_KEY_CACHE = new Map(); // key → { result: {isValid, userId}, expiresAt: number }
+const CACHE_TTL_MS = 60_000; // 缓存 60 秒
+
+function getCachedKeyResult(apiKey) {
+  const entry = API_KEY_CACHE.get(apiKey);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    API_KEY_CACHE.delete(apiKey);
+    return null;
+  }
+  return entry.result;
+}
+
+function setCachedKeyResult(apiKey, result) {
+  // 防止缓存无限膨胀：限制最多 500 条
+  if (API_KEY_CACHE.size > 500) {
+    // 清除过期条目
+    const now = Date.now();
+    for (const [k, v] of API_KEY_CACHE) {
+      if (now > v.expiresAt) API_KEY_CACHE.delete(k);
+    }
+    // 如果仍然超限，清除最早的一半
+    if (API_KEY_CACHE.size > 500) {
+      const keys = [...API_KEY_CACHE.keys()];
+      for (let i = 0; i < keys.length / 2; i++) {
+        API_KEY_CACHE.delete(keys[i]);
+      }
+    }
+  }
+  API_KEY_CACHE.set(apiKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
 async function validateGatewayApiKey(apiKey, env) {
   if (!apiKey) return { isValid: false, userId: null };
+
+  // 检查缓存
+  const cached = getCachedKeyResult(apiKey);
+  if (cached) return cached;
   
   const staticKeys = parseStaticGatewayKeys(env);
   if (staticKeys.includes(apiKey)) {
     // 静态密钥无法关联到特定用户，返回 null
-    return { isValid: true, userId: null };
+    const result = { isValid: true, userId: null };
+    setCachedKeyResult(apiKey, result);
+    return result;
   }
 
   const supabaseUrl = env?.SUPABASE_URL;
@@ -134,7 +180,9 @@ async function validateGatewayApiKey(apiKey, env) {
     if (response.ok) {
       const rows = await response.json().catch(() => []);
       if (Array.isArray(rows) && rows.length > 0) {
-        return { isValid: true, userId: rows[0].user_id };
+        const result = { isValid: true, userId: rows[0].user_id };
+        setCachedKeyResult(apiKey, result);
+        return result;
       }
     }
   } catch (e) {
@@ -160,10 +208,15 @@ async function validateGatewayApiKey(apiKey, env) {
 
   const rows = await response.json().catch(() => []);
   if (Array.isArray(rows) && rows.length > 0) {
-    return { isValid: true, userId: rows[0].user_id };
+    const result = { isValid: true, userId: rows[0].user_id };
+    setCachedKeyResult(apiKey, result);
+    return result;
   }
   
-  return { isValid: false, userId: null };
+  // 缓存无效 key 结果（较短 TTL 防止暴力尝试）
+  const invalidResult = { isValid: false, userId: null };
+  API_KEY_CACHE.set(apiKey, { result: invalidResult, expiresAt: Date.now() + 10_000 }); // 10s
+  return invalidResult;
 }
 
 async function hasGatewayAuthConfigured(env) {
@@ -326,6 +379,57 @@ export function resolveProvider(model, providers, routes) {
   return null;
 }
 
+/**
+ * 解析所有能承载指定模型的供应商（用于 fallback）
+ * 返回按优先级排序的供应商数组
+ */
+export function resolveProviderCandidates(model, providers, routes) {
+  const candidates = [];
+  const seenIds = new Set();
+
+  // 1. 路由规则匹配（按优先级）
+  for (const route of routes) {
+    if (matchPattern(route.pattern, model)) {
+      const provider = providers.find((p) => p.id === route.target_provider_id && p.enabled);
+      if (provider && !seenIds.has(provider.id)) {
+        candidates.push(provider);
+        seenIds.add(provider.id);
+      }
+    }
+  }
+
+  // 2. 直接匹配供应商的 models 列表
+  for (const provider of providers) {
+    if (!provider.enabled || seenIds.has(provider.id)) continue;
+    if (provider.models && provider.models.includes(model)) {
+      candidates.push(provider);
+      seenIds.add(provider.id);
+    }
+  }
+
+  // 3. 通配符匹配
+  for (const provider of providers) {
+    if (!provider.enabled || seenIds.has(provider.id)) continue;
+    if (provider.models) {
+      for (const m of provider.models) {
+        if (matchPattern(m, model)) {
+          candidates.push(provider);
+          seenIds.add(provider.id);
+          break;
+        }
+      }
+    }
+  }
+
+  // 4. 如果没有匹配且只有一个启用供应商
+  if (candidates.length === 0) {
+    const enabled = providers.filter((p) => p.enabled);
+    if (enabled.length === 1) return enabled;
+  }
+
+  return candidates;
+}
+
 // --- 构建上游请求 URL ---
 export function buildUpstreamUrl(provider, model) {
   let base = provider.base_url.replace(/\/+$/, "");
@@ -460,6 +564,9 @@ export async function logUsage(env, record) {
     return;
   }
 
+  // 自动计算成本
+  const cost = record.cost || calculateCost(record.model, record.promptTokens, record.completionTokens);
+
   try {
     const response = await fetch(`${url}/rest/v1/usage_records`, {
       method: "POST",
@@ -478,7 +585,7 @@ export async function logUsage(env, record) {
         prompt_tokens: record.promptTokens,
         completion_tokens: record.completionTokens,
         total_tokens: record.totalTokens,
-        cost: record.cost,
+        cost,
         timestamp: record.timestamp,
         status: record.status,
         latency: record.latency,
@@ -494,6 +601,75 @@ export async function logUsage(env, record) {
   } catch (err) {
     console.error(`[logUsage] 写入异常:`, err);
   }
+}
+
+// --- 模型定价表（美元 / 1M tokens） ---
+// 来源：各供应商官方定价页，定期更新
+const MODEL_PRICING = {
+  // OpenAI
+  "gpt-4o":             { prompt: 2.50, completion: 10.00 },
+  "gpt-4o-mini":        { prompt: 0.15, completion: 0.60 },
+  "gpt-4-turbo":        { prompt: 10.00, completion: 30.00 },
+  "gpt-4":              { prompt: 30.00, completion: 60.00 },
+  "gpt-3.5-turbo":      { prompt: 0.50, completion: 1.50 },
+  "o1":                 { prompt: 15.00, completion: 60.00 },
+  "o1-mini":            { prompt: 3.00, completion: 12.00 },
+  "o3-mini":            { prompt: 1.10, completion: 4.40 },
+  // Anthropic
+  "claude-sonnet-4-20250514":    { prompt: 3.00, completion: 15.00 },
+  "claude-3-5-sonnet-20241022":  { prompt: 3.00, completion: 15.00 },
+  "claude-3-5-haiku-20241022":   { prompt: 0.80, completion: 4.00 },
+  "claude-3-opus-20240229":      { prompt: 15.00, completion: 75.00 },
+  "claude-3-haiku-20240307":     { prompt: 0.25, completion: 1.25 },
+  // Google
+  "gemini-2.0-flash":   { prompt: 0.10, completion: 0.40 },
+  "gemini-1.5-pro":     { prompt: 1.25, completion: 5.00 },
+  "gemini-1.5-flash":   { prompt: 0.075, completion: 0.30 },
+  // DeepSeek
+  "deepseek-chat":      { prompt: 0.14, completion: 0.28 },
+  "deepseek-coder":     { prompt: 0.14, completion: 0.28 },
+  "deepseek-reasoner":  { prompt: 0.55, completion: 2.19 },
+  // Groq (免费额度，实际 0)
+  "llama-3.1-8b-instant":   { prompt: 0.05, completion: 0.08 },
+  "llama-3.1-70b-versatile": { prompt: 0.59, completion: 0.79 },
+  "mixtral-8x7b-32768":     { prompt: 0.24, completion: 0.24 },
+  // Moonshot
+  "moonshot-v1-8k":     { prompt: 0.85, completion: 0.85 },
+  "moonshot-v1-32k":    { prompt: 1.70, completion: 1.70 },
+  "moonshot-v1-128k":   { prompt: 4.25, completion: 4.25 },
+  // 通义千问 (ModelScope/DashScope)
+  "qwen-turbo":         { prompt: 0.28, completion: 0.84 },
+  "qwen-plus":          { prompt: 0.57, completion: 1.70 },
+  "qwen-max":           { prompt: 2.83, completion: 8.50 },
+};
+
+/**
+ * 根据模型名和 token 数量计算成本（美元）
+ * 支持精确匹配和前缀匹配（如 "gpt-4o-2024-08-06" 匹配 "gpt-4o"）
+ */
+export function calculateCost(model, promptTokens, completionTokens) {
+  if (!model || (!promptTokens && !completionTokens)) return 0;
+
+  // 精确匹配
+  let pricing = MODEL_PRICING[model];
+
+  // 前缀匹配：按 key 长度降序查找最长匹配
+  if (!pricing) {
+    const keys = Object.keys(MODEL_PRICING).sort((a, b) => b.length - a.length);
+    for (const key of keys) {
+      if (model.startsWith(key)) {
+        pricing = MODEL_PRICING[key];
+        break;
+      }
+    }
+  }
+
+  if (!pricing) return 0;
+
+  const promptCost = (promptTokens / 1_000_000) * pricing.prompt;
+  const completionCost = (completionTokens / 1_000_000) * pricing.completion;
+  // 保留 6 位小数精度
+  return Math.round((promptCost + completionCost) * 1_000_000) / 1_000_000;
 }
 
 // --- 流式响应处理（将上游 SSE 转发，同时处理格式差异） ---

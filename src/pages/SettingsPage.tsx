@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import { Key, Download, RefreshCw, Trash2, Cloud, Globe, Copy, Plus } from "lucide-react";
 import { exportConfigurationData, importConfigurationData, clearUsageLogs } from "@/lib/store";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { toast } from "sonner";
 import {
   loadGatewayConfig,
   saveGatewayConfig,
@@ -25,7 +26,7 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
 
   const handleSave = async () => {
     await saveGatewayConfig(gatewayConfig);
-    console.log("设置已保存");
+    toast.success("设置已保存");
   };
 
   const handleRegenerateKey = (index: number) => {
@@ -34,7 +35,7 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
       ...prev,
       apiKeys: prev.apiKeys.map((key, keyIndex) => (keyIndex === index ? newKey : key)),
     }));
-    console.log("API Key 已重新生成");
+    toast.success("API Key 已重新生成");
   };
 
   const handleAddApiKey = () => {
@@ -43,7 +44,7 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
       ...prev,
       apiKeys: [...prev.apiKeys, newKey],
     }));
-    console.log("已添加新的 API Key");
+    toast.success("已添加新的 API Key");
   };
 
   const handleDeleteApiKey = (index: number) => {
@@ -51,21 +52,21 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
       ...prev,
       apiKeys: prev.apiKeys.filter((_, keyIndex) => keyIndex !== index),
     }));
-    console.log("API Key 已删除");
+    toast.success("API Key 已删除");
   };
 
   const handleCopyApiKey = async (key: string) => {
     try {
       await navigator.clipboard.writeText(key);
-      console.log("API Key 已复制");
+      toast.success("API Key 已复制");
     } catch {
-      console.error("复制失败，请手动复制");
+      toast.error("复制失败，请手动复制");
     }
   };
 
   const handleClearLogs = async () => {
     await clearUsageLogs();
-    console.log("日志已清空");
+    toast.success("日志已清空");
     setTimeout(() => window.location.reload(), 500);
   };
 
@@ -78,7 +79,7 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
     a.download = "llm-gateway-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    console.log("配置已导出");
+    toast.success("配置已导出");
   };
 
   const handleImport = async () => {
@@ -92,10 +93,10 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
       try {
         const data = JSON.parse(text);
         await importConfigurationData(data);
-        console.log("配置已导入，页面将刷新");
+        toast.success("配置已导入，页面将刷新");
         setTimeout(() => window.location.reload(), 500);
       } catch {
-        console.error("导入失败：文件格式错误");
+        toast.error("导入失败：文件格式错误");
       }
     };
     input.click();

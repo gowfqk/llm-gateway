@@ -7,6 +7,7 @@ import { Eye, EyeOff, Lock, Mail, Loader2, Cloud } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { signIn, signInWithDemo, signUp, type AuthUser } from "@/lib/auth";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { toast } from "sonner";
 
 export default function LoginPage({ onAuth }: { onAuth: (user: AuthUser) => void }) {
   const [email, setEmail] = useState("");
@@ -24,11 +25,11 @@ export default function LoginPage({ onAuth }: { onAuth: (user: AuthUser) => void
     try {
       const { user } = await signInWithDemo();
       if (user) {
-        console.log("演示账号登录成功");
+        toast.success("演示账号登录成功");
         onAuth({ id: user.id, email: user.email || null });
       }
     } catch (err: unknown) {
-      console.error(err instanceof Error ? err.message : "登录失败");
+      toast.error(err instanceof Error ? err.message : "登录失败");
     } finally {
       setLoading(false);
     }
@@ -37,7 +38,7 @@ export default function LoginPage({ onAuth }: { onAuth: (user: AuthUser) => void
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      console.error("请输入邮箱和密码");
+      toast.error("请输入邮箱和密码");
       return;
     }
     setLoading(true);
@@ -45,26 +46,23 @@ export default function LoginPage({ onAuth }: { onAuth: (user: AuthUser) => void
       if (isSignUp) {
         const { user } = await signUp(email, password);
         if (user) {
-          console.log("注册成功，请检查邮箱确认");
-          if (user.email) {
-            console.log("确认后可直接登录");
-          }
+          toast.success("注册成功，请检查邮箱确认");
         }
       } else {
         const { user } = await signIn(email, password);
         if (user) {
-          console.log("登录成功");
+          toast.success("登录成功");
           onAuth({ id: user.id, email: user.email || null });
         }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "操作失败";
       if (message.includes("Invalid login credentials")) {
-        console.error("邮箱或密码错误");
+        toast.error("邮箱或密码错误");
       } else if (message.includes("Email not confirmed")) {
-        console.error("请先确认邮箱");
+        toast.error("请先确认邮箱");
       } else {
-        console.error(message);
+        toast.error(message);
       }
     } finally {
       setLoading(false);

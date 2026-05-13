@@ -38,6 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { loadGatewayConfig, getProxyUrl, type GatewayConfig } from "@/lib/gateway-config";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const PROVIDER_CONFIGS: Record<Exclude<ProviderType, "custom">, { label: string; defaultBaseUrl: string; color: string; free?: boolean; desc?: string }> = {
   openai: { label: "OpenAI", defaultBaseUrl: "https://api.openai.com/v1", color: "bg-emerald-500" },
@@ -215,7 +216,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
 
   const handleSave = async () => {
     if (!formData.name || !formData.baseUrl || !formData.apiKey) {
-      console.error("请填写必填字段");
+      toast.error("请填写必填字段");
       return;
     }
     const models = formData.models.split(",").map((m) => m.trim()).filter(Boolean);
@@ -243,7 +244,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
       setProviders(updated);
       await saveProviderData(updated.find((p) => p.id === editingProvider.id)!);
       await refresh();
-      console.log("供应商已更新");
+      toast.success("供应商已更新");
     } else {
       const newProvider: Provider = {
         id: generateId("prov"), name: formData.name, type: formData.type,
@@ -256,7 +257,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
       setProviders(updated);
       await saveProviderData(newProvider);
       await refresh();
-      console.log("供应商已添加");
+      toast.success("供应商已添加");
     }
     setDialogOpen(false);
   };
@@ -266,7 +267,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     setProviders(updated);
     await deleteProviderData(id);
     await refresh();
-    console.log("供应商已删除");
+    toast.success("供应商已删除");
   };
 
   const toggleEnabled = async (id: string) => {
@@ -279,7 +280,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
   const copyApiKey = (id: string, key: string) => {
     navigator.clipboard.writeText(key);
     setCopiedId(id);
-    console.log("API Key 已复制");
+    toast.success("API Key 已复制");
     setTimeout(() => setCopiedId(null), 2000);
   };
 
@@ -414,28 +415,28 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
       } catch (err) {
         // 测试失败
         setTestResults((prev) => ({ ...prev, [provider.id]: { ok: false, message: "连接失败" } }));
-        console.error(`${provider.name} API 测试失败：连接失败`);
+        toast.error(`${provider.name} API 测试失败：连接失败`);
         setTestingId(null);
         return;
       }
 
       if (result.ok) {
         setTestResults((prev) => ({ ...prev, [provider.id]: { ok: true, message: "连接成功", latency: result.latency } }));
-        console.log(`${provider.name} API 测试成功 (${result.latency}ms)`);
+        toast.success(`${provider.name} API 测试成功 (${result.latency}ms)`);
       } else {
         let errorMsg = result.error || `HTTP ${result.status}`;
         if (result.status === 401 || errorMsg.includes("Invalid")) errorMsg = "API Key 无效或已过期";
         else if (result.status === 403) errorMsg = "权限不足";
         else if (result.status === 429) errorMsg = "请求频率超限";
         setTestResults((prev) => ({ ...prev, [provider.id]: { ok: false, message: errorMsg, latency: result.latency } }));
-        console.error(`${provider.name} API 测试失败：${errorMsg}`);
+        toast.error(`${provider.name} API 测试失败：${errorMsg}`);
       }
     } catch (err: unknown) {
       const latency = Date.now() - startTime;
       let message = "连接失败";
       if (err instanceof Error) message = err.message;
       setTestResults((prev) => ({ ...prev, [provider.id]: { ok: false, message, latency } }));
-      console.error(`${provider.name} API 测试失败: ${message}`);
+      toast.error(`${provider.name} API 测试失败: ${message}`);
     } finally {
       setTestingId(null);
     }
