@@ -377,9 +377,7 @@ export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () =
               </Button>
             )}
           </div>
-          {!gatewayUrl && (
-            <p className="text-xs text-amber-600 mt-1.5">提示：未配置代理 URL，将使用当前域名调用 /v1/chat/completions</p>
-          )}
+
         </div>
       </div>
     </AppLayout>
