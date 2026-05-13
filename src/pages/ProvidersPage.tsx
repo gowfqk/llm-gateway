@@ -30,13 +30,12 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { saveProviderData, deleteProviderData, generateId } from "@/lib/store";
-import type { Provider, ProviderType, ProxyConfig } from "@/types";
-import { useState, Fragment, useEffect, useCallback } from "react";
-import { Plus, Pencil, Trash2, Eye, EyeOff, Copy, Check, Sparkles, Loader2, TestTube, TestTube2, AlertCircle, Globe, ChevronDown, ChevronUp, Wand2 } from "lucide-react";
+import type { Provider, ProviderType } from "@/types";
+import { useState, Fragment, useCallback } from "react";
+import { Plus, Pencil, Trash2, Eye, EyeOff, Copy, Check, Sparkles, Loader2, TestTube, TestTube2, AlertCircle, Wand2 } from "lucide-react";
 import { useProviders } from "@/hooks/useData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { loadGatewayConfig, getProxyUrl, type GatewayConfig } from "@/lib/gateway-config";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -60,16 +59,13 @@ const PROVIDER_CONFIGS: Record<Exclude<ProviderType, "custom">, { label: string;
 
 export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () => void; userEmail: string }) {
   const { data: providers, loading, setData: setProviders, refresh } = useProviders();
-  const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig>({ proxyUrl: "", apiKeys: [] });
   const [showKey, setShowKey] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [formData, setFormData] = useState({
     name: "", type: "custom" as ProviderType, baseUrl: "", apiKey: "", models: "", rateLimit: "",
-    proxyEnabled: false, proxyType: "none" as ProxyConfig["type"], proxyHost: "", proxyPort: "", proxyUser: "", proxyPass: "",
   });
-  const [showProxy, setShowProxy] = useState(false);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchModelsError, setFetchModelsError] = useState<string | null>(null);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
@@ -171,14 +167,9 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     }
   }, [formData.baseUrl, formData.apiKey, formData.type, formData.name]);
 
-  useEffect(() => {
-    loadGatewayConfig().then(setGatewayConfig);
-  }, []);
-
   const openCreate = () => {
     setEditingProvider(null);
-    setFormData({ name: "", type: "custom", baseUrl: "", apiKey: "", models: "", rateLimit: "", proxyEnabled: false, proxyType: "none", proxyHost: "", proxyPort: "", proxyUser: "", proxyPass: "" });
-    setShowProxy(false);
+    setFormData({ name: "", type: "custom", baseUrl: "", apiKey: "", models: "", rateLimit: "" });
     setFetchedModels([]);
     setModelSearch("");
     setShowModelPicker(false);
@@ -188,18 +179,10 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
 
   const openEdit = (p: Provider) => {
     setEditingProvider(p);
-    const proxy = p.proxy;
     setFormData({
       name: p.name, type: p.type, baseUrl: p.baseUrl, apiKey: p.apiKey,
       models: p.models.join(", "), rateLimit: p.rateLimit?.toString() || "",
-      proxyEnabled: proxy?.enabled || false,
-      proxyType: proxy?.type || "none",
-      proxyHost: proxy?.host || "",
-      proxyPort: proxy?.port?.toString() || "",
-      proxyUser: proxy?.username || "",
-      proxyPass: proxy?.password || "",
     });
-    setShowProxy(!!proxy?.enabled);
     setFetchedModels([]);
     setModelSearch("");
     setShowModelPicker(false);
@@ -220,25 +203,14 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
       return;
     }
     const models = formData.models.split(",").map((m) => m.trim()).filter(Boolean);
-    
+
     console.log("[handleSave] formData:", formData);
     console.log("[handleSave] models:", models);
-
-    const proxy: ProxyConfig = formData.proxyEnabled
-      ? {
-          enabled: true,
-          type: formData.proxyType,
-          host: formData.proxyHost || undefined,
-          port: formData.proxyPort ? parseInt(formData.proxyPort) : undefined,
-          username: formData.proxyUser || undefined,
-          password: formData.proxyPass || undefined,
-        }
-      : { enabled: false, type: "none" };
 
     if (editingProvider) {
       const updated = providers.map((p) =>
         p.id === editingProvider.id
-          ? { ...p, name: formData.name, type: formData.type, baseUrl: formData.baseUrl, apiKey: formData.apiKey, models, rateLimit: formData.rateLimit ? parseInt(formData.rateLimit) : undefined, proxy }
+          ? { ...p, name: formData.name, type: formData.type, baseUrl: formData.baseUrl, apiKey: formData.apiKey, models, rateLimit: formData.rateLimit ? parseInt(formData.rateLimit) : undefined }
           : p
       );
       setProviders(updated);
@@ -250,7 +222,6 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
         id: generateId("prov"), name: formData.name, type: formData.type,
         baseUrl: formData.baseUrl, apiKey: formData.apiKey, enabled: true, models,
         rateLimit: formData.rateLimit ? parseInt(formData.rateLimit) : undefined,
-        proxy,
         createdAt: new Date().toISOString(),
       };
       const updated = [...providers, newProvider];
@@ -709,75 +680,6 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
               <div className="space-y-2">
                 <Label>速率限制 (请求/分钟)</Label>
                 <Input value={formData.rateLimit} onChange={(e) => setFormData((prev) => ({ ...prev, rateLimit: e.target.value }))} placeholder="例如：500" type="number" />
-              </div>
-
-              {/* Proxy Config */}
-              <div className="border rounded-lg p-4 space-y-3">
-                <button
-                  type="button"
-                  className="flex items-center justify-between w-full text-sm font-medium"
-                  onClick={() => setShowProxy(!showProxy)}
-                >
-                  <span className="flex items-center gap-2">
-                    <Globe className="w-4 h-4" />
-                    代理配置
-                  </span>
-                  {showProxy ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-
-                {showProxy && (
-                  <div className="space-y-3 pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="proxy-enabled"
-                        checked={formData.proxyEnabled}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, proxyEnabled: e.target.checked }))}
-                        className="rounded"
-                      />
-                      <Label htmlFor="proxy-enabled" className="text-sm cursor-pointer">启用代理</Label>
-                    </div>
-
-                    {formData.proxyEnabled && (
-                      <>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-2">
-                            <Label className="text-xs">代理类型</Label>
-                            <select
-                              value={formData.proxyType}
-                              onChange={(e) => setFormData((prev) => ({ ...prev, proxyType: e.target.value as ProxyConfig["type"] }))}
-                              className="flex h-9 w-full rounded-md border bg-background px-3 py-1 text-sm shadow-sm"
-                            >
-                              <option value="socks5">SOCKS5</option>
-                              <option value="http">HTTP</option>
-                              <option value="https">HTTPS</option>
-                            </select>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-2">
-                              <Label className="text-xs">主机</Label>
-                              <Input value={formData.proxyHost} onChange={(e) => setFormData((prev) => ({ ...prev, proxyHost: e.target.value }))} placeholder="127.0.0.1" className="h-9" />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-xs">端口</Label>
-                              <Input value={formData.proxyPort} onChange={(e) => setFormData((prev) => ({ ...prev, proxyPort: e.target.value }))} placeholder="1080" className="h-9" type="number" />
-                            </div>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-2">
-                            <Label className="text-xs">用户名（可选）</Label>
-                            <Input value={formData.proxyUser} onChange={(e) => setFormData((prev) => ({ ...prev, proxyUser: e.target.value }))} placeholder="user" className="h-9" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-xs">密码（可选）</Label>
-                            <Input value={formData.proxyPass} onChange={(e) => setFormData((prev) => ({ ...prev, proxyPass: e.target.value }))} placeholder="pass" className="h-9" type="password" />
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
             <DialogFooter>
