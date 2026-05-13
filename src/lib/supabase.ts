@@ -92,11 +92,28 @@ export async function fetchProviders(userId: string): Promise<Provider[]> {
     rateLimit: row.rate_limit as number | undefined,
     // proxy_json 列可能不存在，使用 undefined 作为默认值
     proxy: (row.proxy_json as Provider["proxy"] | null) ?? undefined,
+    // OAuth 字段
+    authType: (row.auth_type as Provider["authType"]) || "api_key",
+    oauth: row.oauth_config ? {
+      ...(row.oauth_config as Record<string, unknown>),
+      accessToken: row.oauth_access_token as string | undefined,
+      refreshToken: row.oauth_refresh_token as string | undefined,
+      tokenExpiry: row.oauth_token_expiry as string | undefined,
+    } as Provider["oauth"] : undefined,
     createdAt: row.created_at as string,
   }));
 }
 
 export async function saveProvider(userId: string, provider: Provider): Promise<void> {
+  // 构建 OAuth 配置对象（不包含 token，token 由后端 callback 管理）
+  const oauthConfig = provider.oauth ? {
+    clientId: provider.oauth.clientId,
+    clientSecret: provider.oauth.clientSecret,
+    authUrl: provider.oauth.authUrl,
+    tokenUrl: provider.oauth.tokenUrl,
+    scopes: provider.oauth.scopes,
+  } : null;
+
   try {
     const { error } = await supabase.from(TABLE_PROVIDERS).upsert({
       id: provider.id,
@@ -109,13 +126,15 @@ export async function saveProvider(userId: string, provider: Provider): Promise<
       models: provider.models,
       rate_limit: provider.rateLimit,
       proxy_json: provider.proxy ?? null,
+      auth_type: provider.authType || "api_key",
+      oauth_config: oauthConfig,
       created_at: provider.createdAt,
     });
     if (error) throw error;
   } catch (err: any) {
-    // 如果 proxy_json 列不存在，尝试不使用该列保存
-    if (err?.details?.includes('proxy_json')) {
-      console.warn("[Supabase] proxy_json 列不存在，跳过代理配置保存");
+    // 如果新列不存在，尝试不使用这些列保存（向后兼容）
+    if (err?.details?.includes('proxy_json') || err?.details?.includes('auth_type') || err?.details?.includes('oauth_config')) {
+      console.warn("[Supabase] 部分列不存在，使用基础字段保存");
       const { error } = await supabase.from(TABLE_PROVIDERS).upsert({
         id: provider.id,
         user_id: userId,
@@ -238,6 +257,14 @@ export async function batchSaveProviders(userId: string, providers: Provider[]):
       models: p.models,
       rate_limit: p.rateLimit,
       proxy_json: p.proxy ?? null,
+      auth_type: p.authType || "api_key",
+      oauth_config: p.oauth ? {
+        clientId: p.oauth.clientId,
+        clientSecret: p.oauth.clientSecret,
+        authUrl: p.oauth.authUrl,
+        tokenUrl: p.oauth.tokenUrl,
+        scopes: p.oauth.scopes,
+      } : null,
       created_at: p.createdAt,
     }))
   );

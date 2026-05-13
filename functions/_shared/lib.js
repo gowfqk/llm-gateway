@@ -258,9 +258,28 @@ export function buildUpstreamUrl(provider, model) {
 }
 
 // --- 构建上游请求头 ---
+// 支持 API Key 和 OAuth 两种认证方式
 export function buildUpstreamHeaders(provider, model) {
   const headers = { "Content-Type": "application/json" };
 
+  // OAuth 认证：使用 access_token
+  if (provider.auth_type === "oauth" && provider.oauth_access_token) {
+    switch (provider.type) {
+      case "anthropic":
+        headers["x-api-key"] = provider.oauth_access_token;
+        headers["anthropic-version"] = "2023-06-01";
+        break;
+      case "google":
+        headers["Authorization"] = `Bearer ${provider.oauth_access_token}`;
+        break;
+      default:
+        headers["Authorization"] = `Bearer ${provider.oauth_access_token}`;
+        break;
+    }
+    return headers;
+  }
+
+  // 传统 API Key 认证
   switch (provider.type) {
     case "anthropic":
       headers["x-api-key"] = provider.api_key;
