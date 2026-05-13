@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Send, Loader2, Trash2, Copy, Check, Settings2, StopCircle } from "lucide-react";
 import { useProviders } from "@/hooks/useData";
 import { loadGatewayConfig, getProxyUrl } from "@/lib/gateway-config";
@@ -30,12 +30,17 @@ interface Message {
 
 export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () => void; userEmail: string }) {
   const { data: providers } = useProviders();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const saved = sessionStorage.getItem("playground-messages");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [input, setInput] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [model, setModel] = useState("");
-  const [temperature, setTemperature] = useState("0.7");
-  const [maxTokens, setMaxTokens] = useState("2048");
+  const [systemPrompt, setSystemPrompt] = useState(() => sessionStorage.getItem("playground-system-prompt") || "");
+  const [model, setModel] = useState(() => sessionStorage.getItem("playground-model") || "");
+  const [temperature, setTemperature] = useState(() => sessionStorage.getItem("playground-temperature") || "0.7");
+  const [maxTokens, setMaxTokens] = useState(() => sessionStorage.getItem("playground-max-tokens") || "2048");
   const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -44,6 +49,27 @@ export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () =
   const [streamContent, setStreamContent] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 持久化对话和设置到 sessionStorage
+  useEffect(() => {
+    try { sessionStorage.setItem("playground-messages", JSON.stringify(messages)); } catch {}
+  }, [messages]);
+
+  useEffect(() => {
+    sessionStorage.setItem("playground-system-prompt", systemPrompt);
+  }, [systemPrompt]);
+
+  useEffect(() => {
+    sessionStorage.setItem("playground-model", model);
+  }, [model]);
+
+  useEffect(() => {
+    sessionStorage.setItem("playground-temperature", temperature);
+  }, [temperature]);
+
+  useEffect(() => {
+    sessionStorage.setItem("playground-max-tokens", maxTokens);
+  }, [maxTokens]);
 
   // 加载网关配置
   useEffect(() => {
@@ -206,6 +232,7 @@ export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () =
   const handleClear = () => {
     setMessages([]);
     setStreamContent("");
+    try { sessionStorage.removeItem("playground-messages"); } catch {}
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
