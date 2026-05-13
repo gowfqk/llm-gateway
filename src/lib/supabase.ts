@@ -1,39 +1,30 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Provider, UsageRecord, RouteRule, GatewayConfig } from "@/types";
+import { getRuntimeConfig, loadRuntimeConfig } from "./runtime-config";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+// Supabase client 使用 Proxy 惰性初始化：
+// - 模块加载期不创建 client，避免 URL/key 缺失时 createClient 抛异常导致白屏。
+// - 首次访问属性时，从 runtime-config（/api/config 或 VITE_* build-time）取值并创建。
+// - 若配置缺失，访问属性时抛出带明确说明的错误。
+let _client: SupabaseClient | null = null;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn(
-    "[Supabase] 未配置环境变量，请在 .env 文件中设置 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY。\n" +
-    "数据将回退到浏览器 IndexedDB 本地存储。"
-  );
-}
-
-// 惰性初始化 Supabase client —— 避免在未配置环境变量时，模块加载期
-// createClient("", "") 抛出 "supabaseUrl is required" 导致整个应用白屏。
-// 未配置时，isSupabaseConfigured() 会返回 false，数据层自动降级到 IndexedDB。
-let _supabaseClient: SupabaseClient | null = null;
-function getSupabaseClient(): SupabaseClient {
-  if (_supabaseClient) return _supabaseClient;
-  if (!supabaseUrl || !supabaseAnonKey) {
+function buildClient(): SupabaseClient {
+  const cfg = getRuntimeConfig();
+  if (!cfg || !cfg.supabaseUrl || !cfg.supabaseAnonKey) {
     throw new Error(
-      "[Supabase] 未配置。请检查 Cloudflare Pages 的 Production 环境变量 " +
-      "VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY 是否已设置并触发重新部署。"
+      "[Supabase] 未配置。请在 Cloudflare Pages 的环境变量中设置 " +
+      "VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY（或 SUPABASE_URL / SUPABASE_ANON_KEY），" +
+      "并重新部署。"
     );
   }
-  _supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-  return _supabaseClient;
+  return createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
 }
 
-// 使用 Proxy 代理：读取 supabase 的属性时才触发 getSupabaseClient()。
-// 这样外层代码（如 `supabase.from(...)`）无需修改，依然可以直接使用 `supabase`。
 export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_target, prop: string | symbol) {
-    const client = getSupabaseClient();
-    const value = (client as unknown as Record<string | symbol, unknown>)[prop];
-    return typeof value === "function" ? (value as Function).bind(client) : value;
+    if (!_client) _client = buildClient();
+    const value = (_client as unknown as Record<string | symbol, unknown>)[prop];
+    return typeof value === "function" ? (value as Function).bind(_client) : value;
   },
 });
 
@@ -42,9 +33,17 @@ export const TABLE_USAGE = "usage_records";
 export const TABLE_ROUTES = "route_rules";
 export const TABLE_GATEWAY_CONFIGS = "gateway_configs";
 
+/**
+ * Supabase 是否已配置并可用。
+ * 要求 loadRuntimeConfig() 已经 resolve 过（即 main.tsx 在 render 前已调用）。
+ */
 export function isSupabaseConfigured(): boolean {
-  return !!(supabaseUrl && supabaseAnonKey);
+  const cfg = getRuntimeConfig();
+  return !!(cfg && cfg.supabaseUrl && cfg.supabaseAnonKey);
 }
+
+/** 重新导出，方便外部在启动时预加载配置 */
+export { loadRuntimeConfig };
 
 export async function fetchGatewayConfig(userId: string): Promise<GatewayConfig | null> {
   const { data, error } = await supabase
