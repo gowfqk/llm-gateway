@@ -45,20 +45,6 @@ export default function DashboardPage({ onLogout, userEmail }: { onLogout: () =>
   const { data: usage, loading: loadingUsage } = useUsage();
   const dailyUsage = useDailyUsage(usage);
 
-  if (loadingProviders || loadingUsage) {
-    return (
-      <AppLayout userEmail={userEmail} onLogout={onLogout}>
-        <div className="space-y-6">
-          <div>
-            <Skeleton className="h-8 w-32" />
-            <Skeleton className="h-4 w-48 mt-2" />
-          </div>
-          <KPISkeleton />
-        </div>
-      </AppLayout>
-    );
-  }
-
   const enabledProviders = providers.filter((p) => p.enabled);
   const { totalRequests, totalTokens, totalCost, avgLatency, successRate } = useMemo(() => {
     const totalRequests = usage.length;
@@ -107,6 +93,20 @@ export default function DashboardPage({ onLogout, userEmail }: { onLogout: () =>
   })), [dailyUsage]);
 
   const recentRecords = useMemo(() => usage.slice(0, 8), [usage]);
+
+  if (loadingProviders || loadingUsage) {
+    return (
+      <AppLayout userEmail={userEmail} onLogout={onLogout}>
+        <div className="space-y-6">
+          <div>
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-4 w-48 mt-2" />
+          </div>
+          <KPISkeleton />
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout userEmail={userEmail} onLogout={onLogout}>
