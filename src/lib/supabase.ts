@@ -1,8 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Provider, UsageRecord, RouteRule, GatewayConfig } from "@/types";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
@@ -11,7 +11,31 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "");
+// 惰性初始化 Supabase client —— 避免在未配置环境变量时，模块加载期
+// createClient("", "") 抛出 "supabaseUrl is required" 导致整个应用白屏。
+// 未配置时，isSupabaseConfigured() 会返回 false，数据层自动降级到 IndexedDB。
+let _supabaseClient: SupabaseClient | null = null;
+function getSupabaseClient(): SupabaseClient {
+  if (_supabaseClient) return _supabaseClient;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      "[Supabase] 未配置。请检查 Cloudflare Pages 的 Production 环境变量 " +
+      "VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY 是否已设置并触发重新部署。"
+    );
+  }
+  _supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+  return _supabaseClient;
+}
+
+// 使用 Proxy 代理：读取 supabase 的属性时才触发 getSupabaseClient()。
+// 这样外层代码（如 `supabase.from(...)`）无需修改，依然可以直接使用 `supabase`。
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop: string | symbol) {
+    const client = getSupabaseClient();
+    const value = (client as unknown as Record<string | symbol, unknown>)[prop];
+    return typeof value === "function" ? (value as Function).bind(client) : value;
+  },
+});
 
 export const TABLE_PROVIDERS = "providers";
 export const TABLE_USAGE = "usage_records";
