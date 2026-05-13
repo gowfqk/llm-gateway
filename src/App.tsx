@@ -6,6 +6,7 @@ import ProvidersPage from "@/pages/ProvidersPage";
 import RoutesPage from "@/pages/RoutesPage";
 import UsagePage from "@/pages/UsagePage";
 import SettingsPage from "@/pages/SettingsPage";
+import PlaygroundPage from "@/pages/PlaygroundPage";
 import type { AuthUser } from "@/lib/auth";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -51,6 +52,9 @@ function App() {
         } />
         <Route path="/usage" element={
           user ? <UsagePage onLogout={handleLogout} /> : <Navigate to="/login" replace />
+        } />
+        <Route path="/playground" element={
+          user ? <PlaygroundPage onLogout={handleLogout} userEmail={user.email || ""} /> : <Navigate to="/login" replace />
         } />
         <Route path="/settings" element={
           user ? <SettingsPage onLogout={handleLogout} /> : <Navigate to="/login" replace />

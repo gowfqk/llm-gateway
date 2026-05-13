@@ -6,6 +6,7 @@ import {
   Route,
   BarChart3,
   Settings,
+  MessageSquare,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -22,6 +23,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "概览", icon: LayoutDashboard, path: "/" },
+  { label: "Playground", icon: MessageSquare, path: "/playground" },
   { label: "供应商", icon: Server, path: "/providers" },
   { label: "路由规则", icon: Route, path: "/routes" },
   { label: "用量日志", icon: BarChart3, path: "/usage" },
