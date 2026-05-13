@@ -30,27 +30,12 @@ export interface GatewayConfig {
   apiKeys: string[];
 }
 
-export type ProviderAuthType = "api_key" | "oauth";
-
-export interface OAuthConfig {
-  clientId: string;
-  clientSecret: string;
-  authUrl: string;       // 授权端点，如 https://accounts.google.com/o/oauth2/v2/auth
-  tokenUrl: string;      // Token 交换端点，如 https://oauth2.googleapis.com/token
-  scopes: string;        // 空格分隔的 scope 列表
-  accessToken?: string;
-  refreshToken?: string;
-  tokenExpiry?: string;  // ISO 时间戳，token 过期时间
-}
-
 export interface Provider {
   id: string;
   name: string;
   type: ProviderType;
   baseUrl: string;
   apiKey: string;
-  authType?: ProviderAuthType; // 默认 "api_key"
-  oauth?: OAuthConfig;         // authType === "oauth" 时使用
   enabled: boolean;
   models: string[];
   rateLimit?: number; // requests per minute

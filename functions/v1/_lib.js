@@ -449,29 +449,9 @@ export function buildUpstreamUrl(provider, model) {
 }
 
 // --- 构建上游请求头 ---
-// 支持 API Key 和 OAuth 两种认证方式
 export function buildUpstreamHeaders(provider, model) {
   const headers = { "Content-Type": "application/json" };
 
-  // OAuth 认证：使用 access_token
-  if (provider.auth_type === "oauth" && provider.oauth_access_token) {
-    switch (provider.type) {
-      case "anthropic":
-        headers["x-api-key"] = provider.oauth_access_token;
-        headers["anthropic-version"] = "2023-06-01";
-        break;
-      case "google":
-        // Google OAuth 使用 Authorization: Bearer 而非 x-goog-api-key
-        headers["Authorization"] = `Bearer ${provider.oauth_access_token}`;
-        break;
-      default:
-        headers["Authorization"] = `Bearer ${provider.oauth_access_token}`;
-        break;
-    }
-    return headers;
-  }
-
-  // 传统 API Key 认证
   switch (provider.type) {
     case "anthropic":
       headers["x-api-key"] = provider.api_key;
@@ -487,116 +467,6 @@ export function buildUpstreamHeaders(provider, model) {
   }
 
   return headers;
-}
-
-// --- OAuth Token 自动刷新 ---
-// 检查 OAuth token 是否即将过期（提前 5 分钟），如果是则尝试刷新
-export async function ensureOAuthToken(provider, env) {
-  if (provider.auth_type !== "oauth") return provider;
-  if (!provider.oauth_access_token) {
-    console.warn(`[OAuth] Provider ${provider.id} 没有 access_token，需要重新授权`);
-    return provider;
-  }
-
-  // 检查 token 是否过期（提前 5 分钟刷新）
-  if (provider.oauth_token_expiry) {
-    const expiryTime = new Date(provider.oauth_token_expiry).getTime();
-    const bufferMs = 5 * 60 * 1000; // 5 分钟缓冲
-    if (Date.now() < expiryTime - bufferMs) {
-      // Token 还有效，无需刷新
-      return provider;
-    }
-  }
-
-  // Token 已过期或即将过期，尝试刷新
-  if (!provider.oauth_refresh_token || !provider.oauth_config) {
-    console.warn(`[OAuth] Provider ${provider.id} token 已过期且无 refresh_token，需要重新授权`);
-    return provider;
-  }
-
-  const oauthConfig = provider.oauth_config;
-  if (!oauthConfig.tokenUrl || !oauthConfig.clientId || !oauthConfig.clientSecret) {
-    console.warn(`[OAuth] Provider ${provider.id} OAuth 配置不完整，无法刷新 token`);
-    return provider;
-  }
-
-  try {
-    console.log(`[OAuth] 刷新 Provider ${provider.id} 的 access_token...`);
-    const tokenResp = await fetch(oauthConfig.tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: provider.oauth_refresh_token,
-        client_id: oauthConfig.clientId,
-        client_secret: oauthConfig.clientSecret,
-      }).toString(),
-    });
-
-    if (!tokenResp.ok) {
-      console.error(`[OAuth] Token 刷新失败: HTTP ${tokenResp.status}`);
-      return provider; // 使用旧 token 尝试
-    }
-
-    const tokenData = await tokenResp.json();
-    const newAccessToken = tokenData.access_token;
-    const newRefreshToken = tokenData.refresh_token || provider.oauth_refresh_token;
-    const expiresIn = tokenData.expires_in;
-    const newExpiry = expiresIn
-      ? new Date(Date.now() + expiresIn * 1000).toISOString()
-      : null;
-
-    if (!newAccessToken) {
-      console.error(`[OAuth] Token 刷新响应缺少 access_token`);
-      return provider;
-    }
-
-    // 更新数据库中的 token
-    await updateProviderOAuthTokens(env, provider.id, newAccessToken, newRefreshToken, newExpiry);
-
-    // 返回更新后的 provider 对象
-    return {
-      ...provider,
-      oauth_access_token: newAccessToken,
-      oauth_refresh_token: newRefreshToken,
-      oauth_token_expiry: newExpiry,
-    };
-  } catch (err) {
-    console.error(`[OAuth] Token 刷新异常:`, err);
-    return provider; // 使用旧 token 尝试
-  }
-}
-
-// --- 将刷新后的 token 写回 Supabase ---
-async function updateProviderOAuthTokens(env, providerId, accessToken, refreshToken, tokenExpiry) {
-  const { url, key } = getSupabaseConfig(env);
-  if (!url || !key) return;
-
-  try {
-    const resp = await fetch(
-      `${url.replace(/\/$/, "")}/rest/v1/providers?id=eq.${encodeURIComponent(providerId)}`,
-      {
-        method: "PATCH",
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          Prefer: "return=minimal",
-        },
-        body: JSON.stringify({
-          oauth_access_token: accessToken,
-          oauth_refresh_token: refreshToken,
-          oauth_token_expiry: tokenExpiry,
-        }),
-      }
-    );
-
-    if (!resp.ok) {
-      console.error(`[OAuth] 更新 token 到数据库失败: HTTP ${resp.status}`);
-    }
-  } catch (err) {
-    console.error(`[OAuth] 写入 token 到数据库异常:`, err);
-  }
 }
 
 // --- 转换请求体为上游格式 ---

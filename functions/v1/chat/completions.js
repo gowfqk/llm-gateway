@@ -11,7 +11,6 @@ import {
   buildUpstreamUrl, buildUpstreamHeaders,
   buildUpstreamBody, convertAnthropicResponse, convertGoogleResponse,
   handleStreamRequest, logUsage, gatewayFetch, generateRequestId,
-  ensureOAuthToken,
 } from "../_lib.js";
 
 export async function onRequestPost(context) {
@@ -55,9 +54,7 @@ export async function onRequestPost(context) {
 
     // --- 流式响应（仅使用首个供应商，不重试） ---
     if (isStream) {
-      let provider = candidates[0];
-      // OAuth token 自动刷新
-      provider = await ensureOAuthToken(provider, context.env);
+      const provider = candidates[0];
       const upstreamUrl = buildUpstreamUrl(provider, model);
       const upstreamHeaders = { ...buildUpstreamHeaders(provider, model), "x-request-id": requestId };
       const upstreamBody = buildUpstreamBody(provider, model, body);
@@ -69,9 +66,7 @@ export async function onRequestPost(context) {
     const maxRetries = Math.min(candidates.length, 3); // 最多尝试 3 个供应商
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      let provider = candidates[attempt];
-      // OAuth token 自动刷新
-      provider = await ensureOAuthToken(provider, context.env);
+      const provider = candidates[attempt];
       const upstreamUrl = buildUpstreamUrl(provider, model);
       const upstreamHeaders = { ...buildUpstreamHeaders(provider, model), "x-request-id": requestId };
       const upstreamBody = buildUpstreamBody(provider, model, body);

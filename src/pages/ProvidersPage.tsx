@@ -30,9 +30,9 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { saveProviderData, deleteProviderData, generateId } from "@/lib/store";
-import type { Provider, ProviderType, ProviderAuthType, OAuthConfig } from "@/types";
-import { useState, Fragment, useCallback, useEffect } from "react";
-import { Plus, Pencil, Trash2, Eye, EyeOff, Copy, Check, Sparkles, Loader2, TestTube, TestTube2, AlertCircle, Wand2, KeyRound, ShieldCheck } from "lucide-react";
+import type { Provider, ProviderType } from "@/types";
+import { useState, Fragment, useCallback } from "react";
+import { Plus, Pencil, Trash2, Eye, EyeOff, Copy, Check, Sparkles, Loader2, TestTube, TestTube2, AlertCircle, Wand2 } from "lucide-react";
 import { useProviders } from "@/hooks/useData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isSupabaseConfigured } from "@/lib/supabase";
@@ -65,15 +65,12 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [formData, setFormData] = useState({
     name: "", type: "custom" as ProviderType, baseUrl: "", apiKey: "", models: "", rateLimit: "",
-    authType: "api_key" as ProviderAuthType,
-    oauthClientId: "", oauthClientSecret: "", oauthAuthUrl: "", oauthTokenUrl: "", oauthScopes: "",
   });
   const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchModelsError, setFetchModelsError] = useState<string | null>(null);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const [modelSearch, setModelSearch] = useState("");
   const [showModelPicker, setShowModelPicker] = useState(false);
-  const [oauthAuthorizing, setOauthAuthorizing] = useState(false);
 
   // Parse current selected models from formData
   const selectedModels = formData.models.split(",").map((m) => m.trim()).filter(Boolean);
@@ -172,7 +169,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
 
   const openCreate = () => {
     setEditingProvider(null);
-    setFormData({ name: "", type: "custom", baseUrl: "", apiKey: "", models: "", rateLimit: "", authType: "api_key", oauthClientId: "", oauthClientSecret: "", oauthAuthUrl: "", oauthTokenUrl: "", oauthScopes: "" });
+    setFormData({ name: "", type: "custom", baseUrl: "", apiKey: "", models: "", rateLimit: "" });
     setFetchedModels([]);
     setModelSearch("");
     setShowModelPicker(false);
@@ -185,12 +182,6 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     setFormData({
       name: p.name, type: p.type, baseUrl: p.baseUrl, apiKey: p.apiKey,
       models: p.models.join(", "), rateLimit: p.rateLimit?.toString() || "",
-      authType: p.authType || "api_key",
-      oauthClientId: p.oauth?.clientId || "",
-      oauthClientSecret: p.oauth?.clientSecret || "",
-      oauthAuthUrl: p.oauth?.authUrl || "",
-      oauthTokenUrl: p.oauth?.tokenUrl || "",
-      oauthScopes: p.oauth?.scopes || "",
     });
     setFetchedModels([]);
     setModelSearch("");
@@ -207,27 +198,11 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
   };
 
   const handleSave = async () => {
-    if (!formData.name || !formData.baseUrl) {
-      toast.error("请填写必填字段（名称和 Base URL）");
-      return;
-    }
-    if (formData.authType === "api_key" && !formData.apiKey) {
-      toast.error("API Key 模式需要填写 API Key");
-      return;
-    }
-    if (formData.authType === "oauth" && (!formData.oauthClientId || !formData.oauthAuthUrl || !formData.oauthTokenUrl)) {
-      toast.error("OAuth 模式需要填写 Client ID、授权 URL 和 Token URL");
+    if (!formData.name || !formData.baseUrl || !formData.apiKey) {
+      toast.error("请填写必填字段");
       return;
     }
     const models = formData.models.split(",").map((m) => m.trim()).filter(Boolean);
-
-    const oauthConfig: OAuthConfig | undefined = formData.authType === "oauth" ? {
-      clientId: formData.oauthClientId,
-      clientSecret: formData.oauthClientSecret,
-      authUrl: formData.oauthAuthUrl,
-      tokenUrl: formData.oauthTokenUrl,
-      scopes: formData.oauthScopes,
-    } : undefined;
 
     console.log("[handleSave] formData:", formData);
     console.log("[handleSave] models:", models);
@@ -235,11 +210,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     if (editingProvider) {
       const updated = providers.map((p) =>
         p.id === editingProvider.id
-          ? {
-              ...p, name: formData.name, type: formData.type, baseUrl: formData.baseUrl,
-              apiKey: formData.apiKey, models, rateLimit: formData.rateLimit ? parseInt(formData.rateLimit) : undefined,
-              authType: formData.authType, oauth: oauthConfig,
-            }
+          ? { ...p, name: formData.name, type: formData.type, baseUrl: formData.baseUrl, apiKey: formData.apiKey, models, rateLimit: formData.rateLimit ? parseInt(formData.rateLimit) : undefined }
           : p
       );
       setProviders(updated);
@@ -251,7 +222,6 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
         id: generateId("prov"), name: formData.name, type: formData.type,
         baseUrl: formData.baseUrl, apiKey: formData.apiKey, enabled: true, models,
         rateLimit: formData.rateLimit ? parseInt(formData.rateLimit) : undefined,
-        authType: formData.authType, oauth: oauthConfig,
         createdAt: new Date().toISOString(),
       };
       const updated = [...providers, newProvider];
@@ -451,45 +421,6 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     }
   };
 
-  // --- OAuth 授权流程 ---
-  const startOAuthAuthorize = async (providerId: string) => {
-    setOauthAuthorizing(true);
-    try {
-      const resp = await fetch("/api/oauth-authorize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId }),
-      });
-      const data = await resp.json();
-      if (!resp.ok || !data.authorizeUrl) {
-        toast.error(data.error?.message || "获取授权 URL 失败");
-        return;
-      }
-      // 跳转到 OAuth 供应商授权页面
-      window.location.href = data.authorizeUrl;
-    } catch (err) {
-      toast.error("发起 OAuth 授权失败");
-    } finally {
-      setOauthAuthorizing(false);
-    }
-  };
-
-  // 处理 OAuth 回调结果（URL 参数）
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const oauthSuccess = params.get("oauth_success");
-    const oauthError = params.get("oauth_error");
-    if (oauthSuccess) {
-      toast.success("OAuth 授权成功！Token 已保存。");
-      // 清理 URL 参数
-      window.history.replaceState({}, "", window.location.pathname);
-      refresh();
-    } else if (oauthError) {
-      toast.error(`OAuth 授权失败: ${oauthError}`);
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
-
   if (loading) {
     return (
       <AppLayout userEmail={userEmail} onLogout={onLogout}>
@@ -545,7 +476,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
                   <TableHead>供应商</TableHead>
                   <TableHead>类型</TableHead>
                   <TableHead>Base URL</TableHead>
-                  <TableHead>认证</TableHead>
+                  <TableHead>API Key</TableHead>
                   <TableHead>模型</TableHead>
                   <TableHead>速率限制</TableHead>
                   <TableHead>状态</TableHead>
@@ -577,22 +508,13 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
                       <TableCell><code className="text-xs bg-muted px-1.5 py-0.5 rounded truncate block max-w-[200px]">{p.baseUrl}</code></TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          {p.authType === "oauth" ? (
-                            <Badge variant="outline" className={cn("text-xs gap-1", p.oauth?.accessToken ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200")}>
-                              <ShieldCheck className="w-3 h-3" />
-                              {p.oauth?.accessToken ? "OAuth 已授权" : "OAuth 未授权"}
-                            </Badge>
-                          ) : (
-                            <>
-                              <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{showKey[p.id] ? p.apiKey : p.apiKey.slice(0, 6) + "••••••"}</code>
-                              <button onClick={() => setShowKey((prev) => ({ ...prev, [p.id]: !prev[p.id] }))} className="text-muted-foreground hover:text-foreground">
-                                {showKey[p.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                              </button>
-                              <button onClick={() => copyApiKey(p.id, p.apiKey)} className="text-muted-foreground hover:text-foreground">
-                                {copiedId === p.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                              </button>
-                            </>
-                          )}
+                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{showKey[p.id] ? p.apiKey : p.apiKey.slice(0, 6) + "••••••"}</code>
+                          <button onClick={() => setShowKey((prev) => ({ ...prev, [p.id]: !prev[p.id] }))} className="text-muted-foreground hover:text-foreground">
+                            {showKey[p.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                          <button onClick={() => copyApiKey(p.id, p.apiKey)} className="text-muted-foreground hover:text-foreground">
+                            {copiedId === p.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -690,76 +612,9 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
                 <Input value={formData.baseUrl} onChange={(e) => setFormData((prev) => ({ ...prev, baseUrl: e.target.value }))} placeholder="https://api.example.com/v1" />
               </div>
               <div className="space-y-2">
-                <Label>认证方式</Label>
-                <Select value={formData.authType} onValueChange={(v) => setFormData((prev) => ({ ...prev, authType: v as ProviderAuthType }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="api_key">
-                      <span className="flex items-center gap-1.5"><KeyRound className="w-3.5 h-3.5" />API Key</span>
-                    </SelectItem>
-                    <SelectItem value="oauth">
-                      <span className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" />OAuth 2.0</span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>API Key *</Label>
+                <Input value={formData.apiKey} onChange={(e) => setFormData((prev) => ({ ...prev, apiKey: e.target.value }))} placeholder="sk-..." type="password" />
               </div>
-              {formData.authType === "api_key" && (
-                <div className="space-y-2">
-                  <Label>API Key *</Label>
-                  <Input value={formData.apiKey} onChange={(e) => setFormData((prev) => ({ ...prev, apiKey: e.target.value }))} placeholder="sk-..." type="password" />
-                </div>
-              )}
-              {formData.authType === "oauth" && (
-                <div className="space-y-3 border rounded-lg p-3 bg-muted/30">
-                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">OAuth 2.0 配置</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Client ID *</Label>
-                      <Input value={formData.oauthClientId} onChange={(e) => setFormData((prev) => ({ ...prev, oauthClientId: e.target.value }))} placeholder="your-client-id" className="h-8 text-sm" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Client Secret</Label>
-                      <Input value={formData.oauthClientSecret} onChange={(e) => setFormData((prev) => ({ ...prev, oauthClientSecret: e.target.value }))} placeholder="your-client-secret" type="password" className="h-8 text-sm" />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">授权 URL (Auth URL) *</Label>
-                    <Input value={formData.oauthAuthUrl} onChange={(e) => setFormData((prev) => ({ ...prev, oauthAuthUrl: e.target.value }))} placeholder="https://accounts.google.com/o/oauth2/v2/auth" className="h-8 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Token URL *</Label>
-                    <Input value={formData.oauthTokenUrl} onChange={(e) => setFormData((prev) => ({ ...prev, oauthTokenUrl: e.target.value }))} placeholder="https://oauth2.googleapis.com/token" className="h-8 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Scopes（空格分隔）</Label>
-                    <Input value={formData.oauthScopes} onChange={(e) => setFormData((prev) => ({ ...prev, oauthScopes: e.target.value }))} placeholder="https://www.googleapis.com/auth/cloud-platform" className="h-8 text-sm" />
-                  </div>
-                  {editingProvider && editingProvider.authType === "oauth" && (
-                    <div className="pt-2 border-t">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-muted-foreground">
-                          {editingProvider.oauth?.accessToken ? (
-                            <span className="text-emerald-600 flex items-center gap-1"><ShieldCheck className="w-3 h-3" />已授权</span>
-                          ) : (
-                            <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" />未授权</span>
-                          )}
-                        </div>
-                        <Button
-                          variant="outline" size="sm"
-                          className="h-7 text-xs gap-1.5"
-                          onClick={() => startOAuthAuthorize(editingProvider.id)}
-                          disabled={oauthAuthorizing}
-                        >
-                          {oauthAuthorizing ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
-                          {editingProvider.oauth?.accessToken ? "重新授权" : "发起授权"}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>可用模型</Label>
