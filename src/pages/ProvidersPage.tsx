@@ -204,9 +204,6 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     }
     const models = formData.models.split(",").map((m) => m.trim()).filter(Boolean);
 
-    console.log("[handleSave] formData:", formData);
-    console.log("[handleSave] models:", models);
-
     if (editingProvider) {
       const updated = providers.map((p) =>
         p.id === editingProvider.id

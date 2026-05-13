@@ -18,9 +18,9 @@ import { saveRouteData, deleteRouteData, generateId } from "@/lib/store";
 import type { RouteRule } from "@/types";
 import { useState } from "react";
 import { Plus, Pencil, Trash2, ArrowUpDown } from "lucide-react";
-import { useProviders } from "@/hooks/useData";
-import { useRoutes } from "@/hooks/useData";
+import { useProviders, useRoutes } from "@/hooks/useData";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 
 export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => void; userEmail: string }) {
   const { data: providers, loading: loadingProviders } = useProviders();
@@ -43,7 +43,7 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
 
   const handleSave = async () => {
     if (!formData.name || !formData.pattern || !formData.targetProviderId) {
-      console.error("请填写必填字段");
+      toast.error("请填写必填字段（名称、匹配模式、目标供应商）");
       return;
     }
     if (editingRoute) {
@@ -52,7 +52,7 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
       );
       setRoutes(updated);
       await saveRouteData(updated.find((r) => r.id === editingRoute.id)!);
-      console.log("路由规则已更新");
+      toast.success("路由规则已更新");
     } else {
       const newRoute: RouteRule = {
         id: generateId("route"), name: formData.name, pattern: formData.pattern,
@@ -61,7 +61,7 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
       const updated = [...routes, newRoute].sort((a, b) => a.priority - b.priority);
       setRoutes(updated);
       await saveRouteData(newRoute);
-      console.log("路由规则已添加");
+      toast.success("路由规则已添加");
     }
     setDialogOpen(false);
   };
@@ -70,7 +70,7 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
     const updated = routes.filter((r) => r.id !== id);
     setRoutes(updated);
     await deleteRouteData(id);
-    console.log("路由规则已删除");
+    toast.success("路由规则已删除");
   };
 
   const toggleEnabled = async (id: string) => {

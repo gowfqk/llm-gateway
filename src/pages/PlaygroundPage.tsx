@@ -1,5 +1,4 @@
 import AppLayout from "@/components/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +17,7 @@ import { useProviders } from "@/hooks/useData";
 import { loadGatewayConfig, getProxyUrl } from "@/lib/gateway-config";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { MarkdownContent } from "@/components/MarkdownContent";
 
 interface Message {
   id: string;
@@ -49,6 +49,12 @@ export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () =
   const [streamContent, setStreamContent] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const streamContentRef = useRef("");
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    streamContentRef.current = streamContent;
+  }, [streamContent]);
 
   // 持久化对话和设置到 sessionStorage
   useEffect(() => {
@@ -83,9 +89,11 @@ export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () =
   }, []);
 
   // 收集所有可用模型
-  const allModels = providers
+  const allModels = useMemo(() => providers
     .filter((p) => p.enabled)
-    .flatMap((p) => p.models.map((m) => ({ model: m, provider: p.name })));
+    .flatMap((p) => p.models.map((m) => ({ model: m, provider: p.name }))),
+    [providers]
+  );
 
   // 自动选择第一个模型
   useEffect(() => {
@@ -203,11 +211,12 @@ export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () =
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         // 用户手动停止
-        if (streamContent) {
+        const currentStream = streamContentRef.current;
+        if (currentStream) {
           const assistantMsg: Message = {
             id: generateId(),
             role: "assistant",
-            content: streamContent + "\n\n_(已停止)_",
+            content: currentStream + "\n\n_(已停止)_",
             timestamp: Date.now(),
             latency: Date.now() - startTime,
             model,
@@ -223,7 +232,7 @@ export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () =
       setLoading(false);
       abortRef.current = null;
     }
-  }, [input, loading, model, messages, systemPrompt, temperature, maxTokens, gatewayUrl, gatewayKey, streamContent]);
+  }, [input, loading, model, messages, systemPrompt, temperature, maxTokens, gatewayUrl, gatewayKey]);
 
   const handleStop = () => {
     abortRef.current?.abort();
@@ -345,7 +354,11 @@ export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () =
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted"
               )}>
-                <div className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</div>
+                {msg.role === "assistant" ? (
+                  <MarkdownContent content={msg.content} />
+                ) : (
+                  <div className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</div>
+                )}
                 {msg.role === "assistant" && (
                   <div className="flex items-center gap-2 mt-2 pt-1.5 border-t border-border/40">
                     {msg.latency && (
@@ -370,7 +383,7 @@ export default function PlaygroundPage({ onLogout, userEmail }: { onLogout: () =
           {streamContent && (
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-lg px-4 py-2.5 bg-muted">
-                <div className="whitespace-pre-wrap text-sm leading-relaxed">{streamContent}</div>
+                <MarkdownContent content={streamContent} />
                 <div className="flex items-center gap-1 mt-2 pt-1.5 border-t border-border/40">
                   <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
                   <span className="text-xs text-muted-foreground">生成中...</span>

@@ -18,6 +18,7 @@ import { format, parseISO } from "date-fns";
 import { ArrowUpRight, ArrowDownRight, Zap, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMemo } from "react";
 
 const CHART_COLORS = ["hsl(220 70% 50%)", "hsl(160 60% 45%)", "hsl(30 80% 55%)", "hsl(280 65% 60%)", "hsl(340 75% 55%)", "hsl(190 50% 50%)"];
 
@@ -59,24 +60,30 @@ export default function DashboardPage({ onLogout, userEmail }: { onLogout: () =>
   }
 
   const enabledProviders = providers.filter((p) => p.enabled);
-  const totalRequests = usage.length;
-  const totalTokens = usage.reduce((s, r) => s + r.totalTokens, 0);
-  const totalCost = usage.reduce((s, r) => s + r.cost, 0);
-  const avgLatency = usage.length > 0 ? usage.reduce((s, r) => s + r.latency, 0) / usage.length : 0;
-  const successRate = usage.length > 0 ? (usage.filter((r) => r.status === "success").length / usage.length) * 100 : 0;
+  const { totalRequests, totalTokens, totalCost, avgLatency, successRate } = useMemo(() => {
+    const totalRequests = usage.length;
+    const totalTokens = usage.reduce((s, r) => s + r.totalTokens, 0);
+    const totalCost = usage.reduce((s, r) => s + r.cost, 0);
+    const avgLatency = usage.length > 0 ? usage.reduce((s, r) => s + r.latency, 0) / usage.length : 0;
+    const successRate = usage.length > 0 ? (usage.filter((r) => r.status === "success").length / usage.length) * 100 : 0;
+    return { totalRequests, totalTokens, totalCost, avgLatency, successRate };
+  }, [usage]);
 
-  const today = format(new Date(), "yyyy-MM-dd");
-  const yesterday = format(new Date(Date.now() - 86400000), "yyyy-MM-dd");
-  const todayUsage = dailyUsage.find((d) => d.date === today);
-  const yesterdayUsage = dailyUsage.find((d) => d.date === yesterday);
-  const tokenChange = yesterdayUsage && yesterdayUsage.totalTokens > 0
-    ? ((todayUsage?.totalTokens || 0) - yesterdayUsage.totalTokens) / yesterdayUsage.totalTokens
-    : 0;
-  const costChange = yesterdayUsage && yesterdayUsage.totalCost > 0
-    ? ((todayUsage?.totalCost || 0) - yesterdayUsage.totalCost) / yesterdayUsage.totalCost
-    : 0;
+  const { tokenChange, costChange } = useMemo(() => {
+    const today = format(new Date(), "yyyy-MM-dd");
+    const yesterday = format(new Date(Date.now() - 86400000), "yyyy-MM-dd");
+    const todayUsage = dailyUsage.find((d) => d.date === today);
+    const yesterdayUsage = dailyUsage.find((d) => d.date === yesterday);
+    const tokenChange = yesterdayUsage && yesterdayUsage.totalTokens > 0
+      ? ((todayUsage?.totalTokens || 0) - yesterdayUsage.totalTokens) / yesterdayUsage.totalTokens
+      : 0;
+    const costChange = yesterdayUsage && yesterdayUsage.totalCost > 0
+      ? ((todayUsage?.totalCost || 0) - yesterdayUsage.totalCost) / yesterdayUsage.totalCost
+      : 0;
+    return { tokenChange, costChange };
+  }, [dailyUsage]);
 
-  const providerDistribution = enabledProviders.map((p) => {
+  const providerDistribution = useMemo(() => enabledProviders.map((p) => {
     const pUsage = usage.filter((r) => r.providerId === p.id);
     return {
       name: p.name,
@@ -84,22 +91,22 @@ export default function DashboardPage({ onLogout, userEmail }: { onLogout: () =>
       cost: pUsage.reduce((s, r) => s + r.cost, 0),
       count: pUsage.length,
     };
-  }).filter((p) => p.count > 0).sort((a, b) => b.tokens - a.tokens);
+  }).filter((p) => p.count > 0).sort((a, b) => b.tokens - a.tokens), [enabledProviders, usage]);
 
-  const statusCounts = {
+  const statusCounts = useMemo(() => ({
     success: usage.filter((r) => r.status === "success").length,
     error: usage.filter((r) => r.status === "error").length,
     rate_limited: usage.filter((r) => r.status === "rate_limited").length,
-  };
+  }), [usage]);
 
-  const trendData = dailyUsage.map((d) => ({
+  const trendData = useMemo(() => dailyUsage.map((d) => ({
     date: format(parseISO(d.date), "MM/dd"),
     tokens: d.totalTokens,
     cost: Math.round(d.totalCost * 100) / 100,
     requests: d.requestCount,
-  }));
+  })), [dailyUsage]);
 
-  const recentRecords = usage.slice(0, 8);
+  const recentRecords = useMemo(() => usage.slice(0, 8), [usage]);
 
   return (
     <AppLayout userEmail={userEmail} onLogout={onLogout}>
@@ -183,7 +190,7 @@ export default function DashboardPage({ onLogout, userEmail }: { onLogout: () =>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} className="text-muted-foreground" />
                   <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" />
-                  <Tooltip contentStyle={{ backgroundColor: "hsl(0 0% 100%)", border: "1px solid hsl(214.3 31.8% 91.4%)", borderRadius: "8px", fontSize: "12px" }} />
+                  <Tooltip contentStyle={{ backgroundColor: "var(--color-popover)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px", color: "var(--color-popover-foreground)" }} />
                   <Area type="monotone" dataKey="tokens" stackId="1" stroke="hsl(220 70% 50%)" fill="hsl(220 70% 50% / 0.15)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -203,7 +210,7 @@ export default function DashboardPage({ onLogout, userEmail }: { onLogout: () =>
                       <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => `${(value / 1000).toFixed(0)}K tokens`} contentStyle={{ backgroundColor: "hsl(0 0% 100%)", border: "1px solid hsl(214.3 31.8% 91.4%)", borderRadius: "8px", fontSize: "12px" }} />
+                  <Tooltip formatter={(value: number) => `${(value / 1000).toFixed(0)}K tokens`} contentStyle={{ backgroundColor: "var(--color-popover)", border: "1px solid var(--color-border)", borderRadius: "8px", fontSize: "12px", color: "var(--color-popover-foreground)" }} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-2 mt-2">
