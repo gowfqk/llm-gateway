@@ -74,6 +74,24 @@ const defaultProviders: Provider[] = [
     enabled: false, models: ["Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3", "THUDM/glm-4-9b-chat"],
     rateLimit: 200, createdAt: "2024-08-01T00:00:00Z",
   },
+  {
+    id: "xai-1", name: "xAI (Grok)", type: "xai",
+    baseUrl: "https://api.x.ai/v1", apiKey: "xai-***",
+    enabled: false, models: ["grok-3", "grok-3-mini", "grok-2"],
+    rateLimit: 60, createdAt: "2024-09-01T00:00:00Z",
+  },
+  {
+    id: "mistral-1", name: "Mistral AI", type: "mistral",
+    baseUrl: "https://api.mistral.ai/v1", apiKey: "***",
+    enabled: false, models: ["mistral-large-latest", "mistral-small-latest", "codestral-latest", "open-mistral-nemo"],
+    rateLimit: 120, createdAt: "2024-09-15T00:00:00Z",
+  },
+  {
+    id: "cohere-1", name: "Cohere", type: "cohere",
+    baseUrl: "https://api.cohere.com/v2", apiKey: "***",
+    enabled: false, models: ["command-r-plus", "command-r", "command-a"],
+    rateLimit: 100, createdAt: "2024-10-01T00:00:00Z",
+  },
 ];
 
 const defaultRoutes: RouteRule[] = [
@@ -94,6 +112,9 @@ function generateMockUsage(): UsageRecord[] {
     { model: "deepseek-chat", provider: "deepseek-1", providerName: "DeepSeek" },
     { model: "meta-llama/llama-3.1-70b-instruct", provider: "openrouter-1", providerName: "OpenRouter" },
     { model: "llama-3.1-70b-versatile", provider: "groq-1", providerName: "Groq" },
+    { model: "grok-3-mini", provider: "xai-1", providerName: "xAI (Grok)" },
+    { model: "mistral-large-latest", provider: "mistral-1", providerName: "Mistral AI" },
+    { model: "command-r-plus", provider: "cohere-1", providerName: "Cohere" },
   ];
   const statuses: UsageRecord["status"][] = ["success", "success", "success", "success", "success", "error", "rate_limited"];
 

@@ -9,7 +9,7 @@ import {
   validateApiKey, getProviders, getRoutes,
   resolveProvider, resolveProviderCandidates,
   buildUpstreamUrl, buildUpstreamHeaders,
-  buildUpstreamBody, convertAnthropicResponse, convertGoogleResponse,
+  buildUpstreamBody, convertAnthropicResponse, convertGoogleResponse, convertCohereResponse,
   handleStreamRequest, logUsage, gatewayFetch, generateRequestId,
 } from "../_lib.js";
 
@@ -52,13 +52,63 @@ export async function onRequestPost(context) {
     // --- 构建上游请求 ---
     const isStream = body.stream === true;
 
-    // --- 流式响应（仅使用首个供应商，不重试） ---
+    // --- 流式响应（支持 fallback：依次尝试候选供应商） ---
     if (isStream) {
-      const provider = candidates[0];
-      const upstreamUrl = buildUpstreamUrl(provider, model);
-      const upstreamHeaders = { ...buildUpstreamHeaders(provider, model), "x-request-id": requestId };
-      const upstreamBody = buildUpstreamBody(provider, model, body);
-      return await handleStreamRequest(upstreamUrl, upstreamHeaders, upstreamBody, provider.type, model);
+      const maxStreamRetries = Math.min(candidates.length, 3);
+      let streamLastError = null;
+
+      for (let attempt = 0; attempt < maxStreamRetries; attempt++) {
+        const provider = candidates[attempt];
+        const upstreamUrl = buildUpstreamUrl(provider, model);
+        const upstreamHeaders = { ...buildUpstreamHeaders(provider, model), "x-request-id": requestId };
+        const upstreamBody = buildUpstreamBody(provider, model, body);
+        const startTime = Date.now();
+
+        try {
+          const streamResp = await handleStreamRequest(upstreamUrl, upstreamHeaders, upstreamBody, provider.type, model);
+          
+          // 流式成功 — 记录 usage（token 数在流式中无法精确统计，记录请求即可）
+          context.waitUntil(logUsage(context.env, {
+            id: `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            userId,
+            providerId: provider.id,
+            providerName: provider.name,
+            model,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            timestamp: new Date().toISOString(),
+            status: "success",
+            latency: Date.now() - startTime,
+          }));
+
+          return streamResp;
+        } catch (streamErr) {
+          const latency = Date.now() - startTime;
+          streamLastError = { message: streamErr.message || "Stream error", status: 502, provider };
+          console.warn(`[fallback/stream] ${provider.name} failed: ${streamLastError.message}, trying next...`);
+
+          // 记录失败
+          context.waitUntil(logUsage(context.env, {
+            id: `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            userId,
+            providerId: provider.id,
+            providerName: provider.name,
+            model,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            timestamp: new Date().toISOString(),
+            status: "error",
+            latency,
+          }));
+          continue;
+        }
+      }
+
+      // 所有流式候选都失败
+      const finalStreamMsg = streamLastError?.message || "All providers failed (stream)";
+      return errorResponse(`流式请求所有供应商均失败 (最后错误: ${finalStreamMsg})`, 502, requestIdHeaders);
     }
 
     // --- 非流式请求（支持 fallback 重试） ---
@@ -144,6 +194,8 @@ export async function onRequestPost(context) {
         result = convertAnthropicResponse(respData, model);
       } else if (provider.type === "google") {
         result = convertGoogleResponse(respData, model);
+      } else if (provider.type === "cohere") {
+        result = convertCohereResponse(respData, model);
       } else {
         result = respData;
       }

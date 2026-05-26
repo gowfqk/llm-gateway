@@ -444,7 +444,12 @@ export function buildUpstreamUrl(provider, model) {
     return `${base}/models/${model}:generateContent`;
   }
 
-  // OpenAI 兼容（绝大多数供应商）
+  // Cohere v2 特殊处理
+  if (provider.type === "cohere") {
+    return `${base}/chat`;
+  }
+
+  // OpenAI 兼容（绝大多数供应商包括 xAI, Mistral）
   return `${base}/chat/completions`;
 }
 
@@ -460,8 +465,12 @@ export function buildUpstreamHeaders(provider, model) {
     case "google":
       headers["x-goog-api-key"] = provider.api_key;
       break;
+    case "cohere":
+      headers["Authorization"] = `Bearer ${provider.api_key}`;
+      headers["X-Client-Name"] = "llm-gateway";
+      break;
     default:
-      // OpenAI 兼容格式
+      // OpenAI 兼容格式（包括 xAI, Mistral）
       headers["Authorization"] = `Bearer ${provider.api_key}`;
       break;
   }
@@ -507,7 +516,23 @@ export function buildUpstreamBody(provider, model, body) {
     };
   }
 
-  // OpenAI 兼容格式 — 直接透传
+  // Cohere v2 格式转换
+  if (provider.type === "cohere") {
+    const messages = body.messages || [];
+    return {
+      model,
+      messages: messages.map((m) => ({
+        role: m.role === "system" ? "system" : m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })),
+      ...(body.max_tokens !== undefined ? { max_tokens: body.max_tokens } : {}),
+      ...(body.temperature !== undefined ? { temperature: body.temperature } : {}),
+      ...(body.top_p !== undefined ? { p: body.top_p } : {}),
+      ...(body.stream ? { stream: body.stream } : {}),
+    };
+  }
+
+  // OpenAI 兼容格式（包括 xAI/Grok, Mistral）— 直接透传
   return { ...body, model };
 }
 
@@ -552,6 +577,27 @@ export function convertGoogleResponse(data, model) {
       prompt_tokens: data.usageMetadata?.promptTokenCount || 0,
       completion_tokens: data.usageMetadata?.candidatesTokenCount || 0,
       total_tokens: data.usageMetadata?.totalTokenCount || 0,
+    },
+  };
+}
+
+// --- 转换 Cohere v2 响应为 OpenAI 格式 ---
+export function convertCohereResponse(data, model) {
+  const text = data.message?.content?.[0]?.text || data.text || "";
+  return {
+    id: `chatcmpl-${Date.now()}`,
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [{
+      index: 0,
+      message: { role: "assistant", content: text },
+      finish_reason: data.finish_reason === "COMPLETE" ? "stop" : data.finish_reason || "stop",
+    }],
+    usage: {
+      prompt_tokens: data.usage?.billed_units?.input_tokens || data.meta?.tokens?.input_tokens || 0,
+      completion_tokens: data.usage?.billed_units?.output_tokens || data.meta?.tokens?.output_tokens || 0,
+      total_tokens: (data.usage?.billed_units?.input_tokens || data.meta?.tokens?.input_tokens || 0) + (data.usage?.billed_units?.output_tokens || data.meta?.tokens?.output_tokens || 0),
     },
   };
 }
@@ -641,6 +687,22 @@ const MODEL_PRICING = {
   "qwen-turbo":         { prompt: 0.28, completion: 0.84 },
   "qwen-plus":          { prompt: 0.57, completion: 1.70 },
   "qwen-max":           { prompt: 2.83, completion: 8.50 },
+  // xAI (Grok)
+  "grok-3":             { prompt: 3.00, completion: 15.00 },
+  "grok-3-mini":        { prompt: 0.30, completion: 0.50 },
+  "grok-2":             { prompt: 2.00, completion: 10.00 },
+  "grok-2-mini":        { prompt: 0.10, completion: 0.40 },
+  // Mistral AI
+  "mistral-large-latest":   { prompt: 2.00, completion: 6.00 },
+  "mistral-medium-latest":  { prompt: 2.70, completion: 8.10 },
+  "mistral-small-latest":   { prompt: 0.20, completion: 0.60 },
+  "codestral-latest":       { prompt: 0.30, completion: 0.90 },
+  "open-mistral-nemo":      { prompt: 0.15, completion: 0.15 },
+  "ministral-8b-latest":    { prompt: 0.10, completion: 0.10 },
+  // Cohere
+  "command-r-plus":     { prompt: 2.50, completion: 10.00 },
+  "command-r":          { prompt: 0.15, completion: 0.60 },
+  "command-a":          { prompt: 2.50, completion: 10.00 },
 };
 
 /**

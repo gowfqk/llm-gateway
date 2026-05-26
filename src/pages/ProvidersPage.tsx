@@ -31,8 +31,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { saveProviderData, deleteProviderData, generateId } from "@/lib/store";
 import type { Provider, ProviderType } from "@/types";
-import { useState, Fragment, useCallback } from "react";
-import { Plus, Pencil, Trash2, Eye, EyeOff, Copy, Check, Sparkles, Loader2, TestTube, TestTube2, AlertCircle, Wand2 } from "lucide-react";
+import { useState, Fragment, useCallback, useMemo } from "react";
+import { Plus, Pencil, Trash2, Eye, EyeOff, Copy, Check, Sparkles, Loader2, TestTube, TestTube2, AlertCircle, Wand2, Search, LayoutGrid, LayoutList, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { useProviders } from "@/hooks/useData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isSupabaseConfigured } from "@/lib/supabase";
@@ -55,6 +55,9 @@ const PROVIDER_CONFIGS: Record<Exclude<ProviderType, "custom">, { label: string;
   groq: { label: "Groq", defaultBaseUrl: "https://api.groq.com/openai/v1", color: "bg-fuchsia-500", free: true, desc: "超快推理，免费额度可用" },
   siliconflow: { label: "硅基流动", defaultBaseUrl: "https://api.siliconflow.cn/v1", color: "bg-lime-500", free: true, desc: "免费额度，支持 Qwen/DeepSeek 等" },
   iflytek: { label: "讯飞星辰", defaultBaseUrl: "https://spark-api.xf-yun.com/v1", color: "bg-purple-500", free: true, desc: "讯飞星火大模型，提供免费额度" },
+  xai: { label: "xAI (Grok)", defaultBaseUrl: "https://api.x.ai/v1", color: "bg-gray-800", desc: "Grok 系列模型，支持超长上下文" },
+  mistral: { label: "Mistral AI", defaultBaseUrl: "https://api.mistral.ai/v1", color: "bg-orange-600", desc: "欧洲领先 AI，高效开源模型" },
+  cohere: { label: "Cohere", defaultBaseUrl: "https://api.cohere.com/v2", color: "bg-rose-600", desc: "企业级 RAG 和生成模型" },
 };
 
 export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () => void; userEmail: string }) {
@@ -71,6 +74,60 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const [modelSearch, setModelSearch] = useState("");
   const [showModelPicker, setShowModelPicker] = useState(false);
+
+  // UI Enhancement states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"table" | "card">("table");
+  const [filterType, setFilterType] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+
+  // Filtered and sorted providers
+  const filteredProviders = useMemo(() => {
+    let result = [...providers];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.type.toLowerCase().includes(q) ||
+        p.models.some((m) => m.toLowerCase().includes(q)) ||
+        p.baseUrl.toLowerCase().includes(q)
+      );
+    }
+
+    // Filter by type
+    if (filterType !== "all") {
+      result = result.filter((p) => p.type === filterType);
+    }
+
+    // Filter by enabled status
+    if (filterStatus === "enabled") {
+      result = result.filter((p) => p.enabled);
+    } else if (filterStatus === "disabled") {
+      result = result.filter((p) => !p.enabled);
+    }
+
+    return result;
+  }, [providers, searchQuery, filterType, filterStatus]);
+
+  // Move provider up/down in order
+  const moveProvider = async (id: string, direction: "up" | "down") => {
+    const idx = providers.findIndex((p) => p.id === id);
+    if (idx < 0) return;
+    if (direction === "up" && idx === 0) return;
+    if (direction === "down" && idx === providers.length - 1) return;
+
+    const newProviders = [...providers];
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    [newProviders[idx], newProviders[swapIdx]] = [newProviders[swapIdx], newProviders[idx]];
+    setProviders(newProviders);
+
+    // Save both swapped providers
+    await saveProviderData(newProviders[idx]);
+    await saveProviderData(newProviders[swapIdx]);
+    toast.success("排序已更新");
+  };
 
   // Parse current selected models from formData
   const selectedModels = formData.models.split(",").map((m) => m.trim()).filter(Boolean);
@@ -318,7 +375,9 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
         case "zhipu":
         case "baichuan":
         case "minimax":
-        case "moonshot": {
+        case "moonshot":
+        case "xai":
+        case "mistral": {
           targetUrl = provider.baseUrl.replace(/\/$/, "") + "/chat/completions";
           headers = {
             "Content-Type": "application/json",
@@ -326,6 +385,19 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
           };
           body = {
             model: provider.models[0] || "qwen-turbo",
+            messages: [{ role: "user", content: "Hi" }],
+            max_tokens: 1,
+          };
+          break;
+        }
+        case "cohere": {
+          targetUrl = provider.baseUrl.replace(/\/$/, "") + "/chat";
+          headers = {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${provider.apiKey}`,
+          };
+          body = {
+            model: provider.models[0] || "command-r-plus",
             messages: [{ role: "user", content: "Hi" }],
             max_tokens: 1,
           };
@@ -457,35 +529,170 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{providers.length}</div><div className="text-sm text-muted-foreground">总供应商数</div></CardContent></Card>
           <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{providers.filter((p) => p.enabled).length}</div><div className="text-sm text-muted-foreground">已启用</div></CardContent></Card>
           <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{providers.reduce((s, p) => s + p.models.length, 0)}</div><div className="text-sm text-muted-foreground">可用模型数</div></CardContent></Card>
+          <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-emerald-600">{Object.values(testResults).filter((r) => r.ok).length}</div><div className="text-sm text-muted-foreground">健康供应商</div></CardContent></Card>
         </div>
 
-        {/* Provider Table */}
+        {/* Search & Filter Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索供应商名称、类型或模型..."
+              className="pl-9"
+            />
+          </div>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-[140px]"><SelectValue placeholder="类型" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部类型</SelectItem>
+              {Object.entries(PROVIDER_CONFIGS).map(([key, cfg]) => (
+                <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-[120px]"><SelectValue placeholder="状态" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部</SelectItem>
+              <SelectItem value="enabled">已启用</SelectItem>
+              <SelectItem value="disabled">已禁用</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="flex border rounded-md">
+            <Button
+              variant={viewMode === "table" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("table")}
+              className="rounded-r-none"
+            >
+              <LayoutList className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={viewMode === "card" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("card")}
+              className="rounded-l-none"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        {filteredProviders.length === 0 && (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground">
+                {searchQuery || filterType !== "all" || filterStatus !== "all"
+                  ? "没有匹配的供应商，请调整筛选条件"
+                  : "暂无供应商，点击「添加供应商」开始配置"}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Card View */}
+        {viewMode === "card" && filteredProviders.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filteredProviders.map((p) => {
+              const config = p.type !== "custom" ? PROVIDER_CONFIGS[p.type] : null;
+              const testResult = testResults[p.id];
+              return (
+                <Card key={p.id} className={cn("relative transition-all hover:shadow-md", !p.enabled && "opacity-60")}>
+                  {/* Health indicator dot */}
+                  <div className={cn(
+                    "absolute top-4 right-4 w-2.5 h-2.5 rounded-full",
+                    testResult?.ok ? "bg-emerald-500" : testResult ? "bg-red-500" : "bg-gray-300"
+                  )} />
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full ${config?.color || "bg-gray-400"}`} />
+                      <CardTitle className="text-base">{p.name}</CardTitle>
+                    </div>
+                    <CardDescription className="flex items-center gap-1.5 mt-1">
+                      <Badge variant="outline" className="capitalize text-xs">{config?.label || p.type}</Badge>
+                      {config?.free && (
+                        <Badge variant="secondary" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400">
+                          <Sparkles className="w-3 h-3 mr-0.5" />免费
+                        </Badge>
+                      )}
+                      {!p.enabled && <Badge variant="destructive" className="text-xs">已禁用</Badge>}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1">模型</div>
+                      <div className="flex flex-wrap gap-1">
+                        {p.models.slice(0, 3).map((m) => (<Badge key={m} variant="secondary" className="text-xs">{m}</Badge>))}
+                        {p.models.length > 3 && (<Badge variant="secondary" className="text-xs">+{p.models.length - 3}</Badge>)}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>速率: {p.rateLimit ? `${p.rateLimit}/min` : "无限"}</span>
+                      {testResult && (
+                        <span className={testResult.ok ? "text-emerald-600" : "text-red-600"}>
+                          {testResult.ok ? `${testResult.latency}ms` : testResult.message}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 pt-2 border-t">
+                      <Switch checked={p.enabled} onCheckedChange={() => toggleEnabled(p.id)} />
+                      <span className="text-xs text-muted-foreground ml-1 flex-1">{p.enabled ? "已启用" : "已禁用"}</span>
+                      <Button variant="ghost" size="sm" onClick={() => testProviderApi(p)} disabled={testingId === p.id}>
+                        {testingId === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube className="w-4 h-4" />}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(p)}><Pencil className="w-4 h-4" /></Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(p.id)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Table View */}
+        {viewMode === "table" && filteredProviders.length > 0 && (
         <Card>
-          <CardHeader><CardTitle>供应商列表</CardTitle><CardDescription>管理所有已配置的 LLM 供应商</CardDescription></CardHeader>
+          <CardHeader><CardTitle>供应商列表</CardTitle><CardDescription>管理所有已配置的 LLM 供应商（{filteredProviders.length}/{providers.length}）</CardDescription></CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8">排序</TableHead>
                   <TableHead>供应商</TableHead>
                   <TableHead>类型</TableHead>
                   <TableHead>Base URL</TableHead>
                   <TableHead>API Key</TableHead>
                   <TableHead>模型</TableHead>
                   <TableHead>速率限制</TableHead>
+                  <TableHead>健康</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {providers.map((p) => {
+                {filteredProviders.map((p) => {
                   const config = p.type !== "custom" ? PROVIDER_CONFIGS[p.type] : null;
+                  const testResult = testResults[p.id];
                   return (
                     <Fragment key={p.id}>
-                      <TableRow>
+                      <TableRow className={cn(!p.enabled && "opacity-50")}>
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5">
+                          <button onClick={() => moveProvider(p.id, "up")} className="text-muted-foreground hover:text-foreground" title="上移">
+                            <ArrowUp className="w-3 h-3" />
+                          </button>
+                          <button onClick={() => moveProvider(p.id, "down")} className="text-muted-foreground hover:text-foreground" title="下移">
+                            <ArrowDown className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className={`w-2.5 h-2.5 rounded-full ${config?.color || "bg-gray-400"}`} />
@@ -521,6 +728,18 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
                         </div>
                       </TableCell>
                       <TableCell>{p.rateLimit ? `${p.rateLimit}/min` : "—"}</TableCell>
+                      <TableCell>
+                        <div className={cn(
+                          "flex items-center gap-1.5 text-xs",
+                          testResult?.ok ? "text-emerald-600" : testResult ? "text-red-600" : "text-muted-foreground"
+                        )}>
+                          <div className={cn(
+                            "w-2 h-2 rounded-full",
+                            testResult?.ok ? "bg-emerald-500" : testResult ? "bg-red-500" : "bg-gray-300"
+                          )} />
+                          {testResult?.ok ? `${testResult.latency}ms` : testResult ? "异常" : "未测"}
+                        </div>
+                      </TableCell>
                       <TableCell><Switch checked={p.enabled} onCheckedChange={() => toggleEnabled(p.id)} /></TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -542,7 +761,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
                     </TableRow>
                     {testResults[p.id] && (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-1 px-4">
+                        <TableCell colSpan={10} className="py-1 px-4">
                           <div className={cn(
                             "text-xs px-2 py-1 rounded flex items-center gap-2",
                             testResults[p.id].ok
@@ -569,6 +788,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
             </Table>
           </CardContent>
         </Card>
+        )}
 
         {/* Add/Edit Dialog */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

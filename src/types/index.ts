@@ -14,6 +14,9 @@ export type ProviderType =
   | "groq"
   | "siliconflow"
   | "iflytek"
+  | "xai"
+  | "mistral"
+  | "cohere"
   | "custom";
 
 export interface ProxyConfig {
