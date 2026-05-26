@@ -8,6 +8,7 @@
 - **Playground** — 内置交互式对话测试，流式输出、Markdown 渲染、会话持久化
 - **自动获取模型** — 从 `/v1/models` API 自动拉取可用模型，带搜索和勾选功能
 - **智能路由** — 按模型名称模式匹配，将请求路由到最优供应商，支持 Fallback 重试
+- **模型别名** — 支持简单别名 (`gpt4=gpt-4o`) 和供应商别名 (`gpt4=openai/gpt-4o`)，通过别名同时指定供应商+模型
 - **用量追踪** — Token 计数、成本估算、请求延迟等完整用量统计
 - **API 连接测试** — 一键测试供应商 API 连通性，批量测试支持
 - **暗色模式** — 支持浅色/深色/跟随系统三种主题模式
@@ -147,6 +148,39 @@ client = OpenAI(
 
 response = client.chat.completions.create(
     model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+### 模型别名
+
+在供应商配置中可以设置模型别名，支持两种格式：
+
+| 格式 | 示例 | 行为 |
+|---|---|---|
+| 简单别名 | `gpt4=gpt-4o` | 仅映射模型名，由路由规则决定供应商 |
+| 供应商别名 | `gpt4=openai/gpt-4o` | 同时指定供应商和模型，跳过路由匹配 |
+
+**供应商标识符**支持按 `type`、`id` 或 `name` 匹配（忽略大小写）：
+
+```
+# 按供应商类型匹配
+fast=groq/llama-3.1-70b-versatile
+claude=anthropic/claude-sonnet-4-20250514
+
+# 按供应商 ID 匹配
+cheap=deepseek-1/deepseek-chat
+
+# 按供应商名称匹配
+local=硅基流动/Qwen/Qwen2.5-72B-Instruct
+```
+
+使用时直接传入别名作为 model 参数：
+
+```python
+# 使用别名 "fast"，自动路由到 Groq 的 llama-3.1-70b-versatile
+response = client.chat.completions.create(
+    model="fast",
     messages=[{"role": "user", "content": "Hello"}]
 )
 ```
