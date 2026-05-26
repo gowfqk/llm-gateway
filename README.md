@@ -122,14 +122,39 @@ npm run dev
 
 ### 部署到 Cloudflare Pages
 
+#### 方式一：GitHub Actions 自动部署（推荐）
+
+项目已配置 `.github/workflows/deploy.yml`，推送到 `main` 分支后自动构建部署。
+
+**需要配置的 GitHub Secrets：**
+
+| Secret | 说明 |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token（需要 Pages 编辑权限） |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID |
+
+配置路径：GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret
+
+**工作流程：**
+1. 推送代码到 `main` 分支
+2. GitHub Actions 自动触发：Checkout → 安装依赖 → 构建 → 部署到 Cloudflare Pages
+3. 部署完成后可在 Cloudflare Dashboard 查看
+
+#### 方式二：手动部署
+
 ```bash
 # 构建
 npm run build
 
 # 部署
 npx wrangler pages deploy dist --project-name llm-gateway
+```
 
-# 设置 secrets
+#### 设置 Cloudflare Pages Secrets
+
+部署后还需配置运行时 Secrets（用于后端 Functions）：
+
+```bash
 echo "your-value" | npx wrangler pages secret put SUPABASE_URL --project-name llm-gateway
 echo "your-value" | npx wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY --project-name llm-gateway
 ```
