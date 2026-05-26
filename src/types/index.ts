@@ -41,7 +41,7 @@ export interface Provider {
   apiKey: string;
   enabled: boolean;
   models: string[];
-  modelAliases?: Record<string, string>; // alias → actual model name, e.g. { "gpt4": "gpt-4o" }
+  modelAliases?: Record<string, string>; // alias → model or provider/model, e.g. { "gpt4": "gpt-4o", "fast": "groq/llama-3.1-70b-versatile" }
   rateLimit?: number; // requests per minute
   proxy?: ProxyConfig; // 独立代理配置
   createdAt: string;
