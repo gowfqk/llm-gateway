@@ -77,7 +77,11 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
 
   // UI Enhancement states
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"table" | "card">("table");
+  const [viewMode, setViewMode] = useState<"table" | "card">(() => {
+    // Default to card view on mobile
+    if (typeof window !== "undefined" && window.innerWidth < 768) return "card";
+    return "table";
+  });
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
@@ -505,40 +509,40 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
   return (
     <AppLayout userEmail={userEmail} onLogout={onLogout}>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">供应商管理</h1>
-            <p className="text-muted-foreground mt-1">配置和管理 LLM API 供应商</p>
+            <p className="text-muted-foreground mt-1 text-sm">配置和管理 LLM API 供应商</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             {isSupabaseConfigured() && (
               <Badge variant="outline" className="gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 云端同步
               </Badge>
             )}
-            <Button variant="outline" onClick={testAllApis}>
-              <TestTube2 className="w-4 h-4 mr-2" />
-              批量测试
+            <Button variant="outline" size="sm" onClick={testAllApis}>
+              <TestTube2 className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">批量</span>测试
             </Button>
-            <Button onClick={openCreate}>
-              <Plus className="w-4 h-4 mr-2" />
-              添加供应商
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="w-4 h-4 mr-1" />
+              添加
             </Button>
           </div>
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{providers.length}</div><div className="text-sm text-muted-foreground">总供应商数</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{providers.filter((p) => p.enabled).length}</div><div className="text-sm text-muted-foreground">已启用</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{providers.reduce((s, p) => s + p.models.length, 0)}</div><div className="text-sm text-muted-foreground">可用模型数</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-emerald-600">{Object.values(testResults).filter((r) => r.ok).length}</div><div className="text-sm text-muted-foreground">健康供应商</div></CardContent></Card>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          <Card><CardContent className="pt-4 sm:pt-6"><div className="text-xl sm:text-2xl font-bold">{providers.length}</div><div className="text-xs sm:text-sm text-muted-foreground">总供应商</div></CardContent></Card>
+          <Card><CardContent className="pt-4 sm:pt-6"><div className="text-xl sm:text-2xl font-bold">{providers.filter((p) => p.enabled).length}</div><div className="text-xs sm:text-sm text-muted-foreground">已启用</div></CardContent></Card>
+          <Card><CardContent className="pt-4 sm:pt-6"><div className="text-xl sm:text-2xl font-bold">{providers.reduce((s, p) => s + p.models.length, 0)}</div><div className="text-xs sm:text-sm text-muted-foreground">可用模型</div></CardContent></Card>
+          <Card><CardContent className="pt-4 sm:pt-6"><div className="text-xl sm:text-2xl font-bold text-emerald-600">{Object.values(testResults).filter((r) => r.ok).length}</div><div className="text-xs sm:text-sm text-muted-foreground">健康</div></CardContent></Card>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col gap-3">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               value={searchQuery}
@@ -547,40 +551,42 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
               className="pl-9"
             />
           </div>
-          <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="w-[140px]"><SelectValue placeholder="类型" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部类型</SelectItem>
-              {Object.entries(PROVIDER_CONFIGS).map(([key, cfg]) => (
-                <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-[120px]"><SelectValue placeholder="状态" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="enabled">已启用</SelectItem>
-              <SelectItem value="disabled">已禁用</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="flex border rounded-md">
-            <Button
-              variant={viewMode === "table" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("table")}
-              className="rounded-r-none"
-            >
-              <LayoutList className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === "card" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("card")}
-              className="rounded-l-none"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={filterType} onValueChange={setFilterType}>
+              <SelectTrigger className="w-[120px] sm:w-[140px] h-9"><SelectValue placeholder="类型" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部类型</SelectItem>
+                {Object.entries(PROVIDER_CONFIGS).map(([key, cfg]) => (
+                  <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="w-[100px] sm:w-[120px] h-9"><SelectValue placeholder="状态" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="enabled">已启用</SelectItem>
+                <SelectItem value="disabled">已禁用</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex border rounded-md ml-auto">
+              <Button
+                variant={viewMode === "table" ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("table")}
+                className="rounded-r-none h-9 px-2.5"
+              >
+                <LayoutList className="w-4 h-4" />
+              </Button>
+              <Button
+                variant={viewMode === "card" ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("card")}
+                className="rounded-l-none h-9 px-2.5"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -598,7 +604,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
 
         {/* Card View */}
         {viewMode === "card" && filteredProviders.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
             {filteredProviders.map((p) => {
               const config = p.type !== "custom" ? PROVIDER_CONFIGS[p.type] : null;
               const testResult = testResults[p.id];
@@ -660,7 +666,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
         {viewMode === "table" && filteredProviders.length > 0 && (
         <Card>
           <CardHeader><CardTitle>供应商列表</CardTitle><CardDescription>管理所有已配置的 LLM 供应商（{filteredProviders.length}/{providers.length}）</CardDescription></CardHeader>
-          <CardContent>
+          <CardContent className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -792,7 +798,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
 
         {/* Add/Edit Dialog */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingProvider ? "编辑供应商" : "添加供应商"}</DialogTitle>
               <DialogDescription>{editingProvider ? "更新供应商配置信息" : "配置新的 LLM API 供应商"}</DialogDescription>

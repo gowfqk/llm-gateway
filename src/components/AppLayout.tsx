@@ -122,7 +122,7 @@ export default function AppLayout({ children, userEmail, onLogout }: AppLayoutPr
   );
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen min-h-dvh bg-background flex overflow-x-hidden">
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
@@ -212,14 +212,14 @@ export default function AppLayout({ children, userEmail, onLogout }: AppLayoutPr
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 min-w-0 overflow-auto">
         <div className="sticky top-0 z-30 h-14 flex items-center gap-3 px-4 border-b border-border bg-background md:hidden">
           <button onClick={() => setMobileOpen(true)} className="text-foreground">
             <Menu className="w-5 h-5" />
           </button>
           <span className="font-bold text-sm">LLM Gateway</span>
         </div>
-        <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
+        <div className="max-w-7xl mx-auto p-3 sm:p-4 md:p-6 lg:p-8">
           {children}
         </div>
       </main>
