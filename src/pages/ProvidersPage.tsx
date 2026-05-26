@@ -919,10 +919,10 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>模型别名</Label>
-                  <span className="text-[10px] text-muted-foreground">格式: 别名=实际模型名</span>
+                  <span className="text-[10px] text-muted-foreground">格式: 别名=模型名 或 别名=供应商/模型名</span>
                 </div>
-                <Textarea value={formData.modelAliases} onChange={(e) => setFormData((prev) => ({ ...prev, modelAliases: e.target.value }))} placeholder="gpt4=gpt-4o, claude=claude-sonnet-4-20250514" rows={2} />
-                <p className="text-[10px] text-muted-foreground">用逗号分隔多个别名。请求使用别名时会自动转换为实际模型名发送给供应商。</p>
+                <Textarea value={formData.modelAliases} onChange={(e) => setFormData((prev) => ({ ...prev, modelAliases: e.target.value }))} placeholder="gpt4=gpt-4o, fast=groq/llama-3.1-70b-versatile" rows={2} />
+                <p className="text-[10px] text-muted-foreground">用逗号分隔多个别名。支持两种格式：<br/>• <code className="bg-muted px-1 rounded">gpt4=gpt-4o</code> — 仅映射模型名，由路由规则决定供应商<br/>• <code className="bg-muted px-1 rounded">fast=groq/llama-3.1-70b-versatile</code> — 同时指定供应商和模型（供应商可用类型名、ID 或名称）</p>
               </div>
             </div>
             <DialogFooter>

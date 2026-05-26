@@ -345,17 +345,53 @@ function matchPattern(pattern, model) {
 }
 
 // --- 根据模型别名解析实际模型名 ---
-// 遍历所有供应商的 model_aliases / modelAliases，如果请求的模型名是别名则返回 { actualModel, provider }
+// 遍历所有供应商的 model_aliases / modelAliases，如果请求的模型名是别名则返回 { actualModel, provider, pinnedProvider }
+// 支持两种别名格式：
+//   1. 简单格式: "gpt4" → "gpt-4o"          (只做模型名映射，不指定供应商)
+//   2. 供应商格式: "gpt4" → "openai/gpt-4o"  (同时指定供应商+模型，pinnedProvider 不为 null)
+//      供应商标识符匹配规则：按 provider.type 或 provider.id 或 provider.name (忽略大小写) 匹配
 export function resolveModelAlias(model, providers) {
   for (const provider of providers) {
     if (!provider.enabled) continue;
     const aliases = provider.model_aliases || provider.modelAliases;
     if (aliases && typeof aliases === "object") {
       if (aliases[model]) {
-        return { actualModel: aliases[model], provider };
+        const aliasValue = aliases[model];
+        // 检查是否是 "provider/model" 格式
+        const slashIndex = aliasValue.indexOf("/");
+        if (slashIndex > 0) {
+          const providerIdent = aliasValue.slice(0, slashIndex);
+          const actualModel = aliasValue.slice(slashIndex + 1);
+          if (actualModel) {
+            // 查找匹配的供应商（按 type、id、name 匹配）
+            const pinnedProvider = findProviderByIdent(providerIdent, providers);
+            if (pinnedProvider) {
+              return { actualModel, provider, pinnedProvider };
+            }
+            // 如果找不到匹配供应商，当作模型名中包含 / 的情况（如 openrouter 格式 "meta-llama/llama-3.1-70b"）
+          }
+        }
+        // 简单格式：只做模型名映射
+        return { actualModel: aliasValue, provider, pinnedProvider: null };
       }
     }
   }
+  return null;
+}
+
+// --- 根据标识符查找供应商 ---
+// 支持按 type / id / name 匹配（忽略大小写）
+function findProviderByIdent(ident, providers) {
+  const lower = ident.toLowerCase();
+  // 优先匹配 type（最常用：openai, anthropic, google 等）
+  let found = providers.find((p) => p.enabled && (p.type || "").toLowerCase() === lower);
+  if (found) return found;
+  // 其次匹配 id
+  found = providers.find((p) => p.enabled && (p.id || "").toLowerCase() === lower);
+  if (found) return found;
+  // 最后匹配 name
+  found = providers.find((p) => p.enabled && (p.name || "").toLowerCase() === lower);
+  if (found) return found;
   return null;
 }
 

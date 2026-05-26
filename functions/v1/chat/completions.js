@@ -45,14 +45,26 @@ export async function onRequestPost(context) {
 
     // --- 模型别名解析 ---
     let resolvedModel = model;
+    let pinnedProvider = null;
     const aliasResult = resolveModelAlias(model, providers);
     if (aliasResult) {
       resolvedModel = aliasResult.actualModel;
-      console.log(`[alias] "${model}" → "${resolvedModel}" (via ${aliasResult.provider.name})`);
+      pinnedProvider = aliasResult.pinnedProvider || null;
+      if (pinnedProvider) {
+        console.log(`[alias] "${model}" → "${pinnedProvider.name}/${resolvedModel}" (pinned provider)`);
+      } else {
+        console.log(`[alias] "${model}" → "${resolvedModel}" (via ${aliasResult.provider.name})`);
+      }
     }
 
     // --- 路由匹配（含 fallback 候选列表） ---
-    const candidates = resolveProviderCandidates(resolvedModel, providers, routes);
+    // 如果别名指定了供应商（pinnedProvider），则直接使用该供应商，跳过路由匹配
+    let candidates;
+    if (pinnedProvider) {
+      candidates = [pinnedProvider];
+    } else {
+      candidates = resolveProviderCandidates(resolvedModel, providers, routes);
+    }
     if (!candidates || candidates.length === 0) {
       return errorResponse(`Model '${model}' not found. Available models: /v1/models`, 404, requestIdHeaders);
     }
