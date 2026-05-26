@@ -86,7 +86,17 @@ export async function onRequestPost(context) {
     const startTime = Date.now();
     
     // Make the actual request to the provider API (server-side, no CORS)
-    const response = await fetch(url, fetchOptions);
+    // 添加 30 秒超时
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    fetchOptions.signal = controller.signal;
+    
+    let response;
+    try {
+      response = await fetch(url, fetchOptions);
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     // 如果目标是 CF 被限制域名且返回 403，提供明确的错误信息
     if (response.status === 403 && isCfBlockedDomain(url)) {
@@ -109,10 +119,11 @@ export async function onRequestPost(context) {
 
     // Read response body
     let responseData;
+    const responseText = await response.text();
     try {
-      responseData = await response.json();
+      responseData = JSON.parse(responseText);
     } catch {
-      responseData = { raw: await response.text() };
+      responseData = { raw: responseText.slice(0, 1000) };
     }
 
     if (!response.ok) {
@@ -145,13 +156,39 @@ export async function onRequestPost(context) {
         }
       );
   } catch (error) {
+    // 不返回 500 — 改为 200 + error payload，避免前端误判为"连接失败"
+    const errMessage = error.message || String(error);
+    let userFriendlyMsg = errMessage;
+    
+    // 超时错误
+    if (errMessage.includes("timeout") || errMessage.includes("abort") || errMessage.includes("Timeout")) {
+      userFriendlyMsg = "请求超时，请检查网络连接或供应商服务状态";
+    }
+    // DNS 解析失败
+    else if (errMessage.includes("ENOTFOUND") || errMessage.includes("getaddrinfo") || errMessage.includes("DNS")) {
+      userFriendlyMsg = "域名解析失败，请检查 Base URL 是否正确";
+    }
+    // 连接被拒绝
+    else if (errMessage.includes("ECONNREFUSED") || errMessage.includes("Connection refused")) {
+      userFriendlyMsg = "连接被拒绝，目标服务器可能不可达";
+    }
+    // SSL/TLS 错误
+    else if (errMessage.includes("SSL") || errMessage.includes("TLS") || errMessage.includes("certificate")) {
+      userFriendlyMsg = "SSL/TLS 证书错误，请检查 URL 是否使用正确的协议";
+    }
+    // fetch 错误
+    else if (errMessage.includes("fetch")) {
+      userFriendlyMsg = "网络请求失败: " + errMessage;
+    }
+
     return new Response(
       JSON.stringify({ 
         ok: false, 
-        error: error.message || String(error),
+        error: userFriendlyMsg,
+        detail: errMessage,
       }),
       { 
-        status: 500,
+        status: 200,
         headers: { 
           "Content-Type": "application/json",
           ...corsHeaders
