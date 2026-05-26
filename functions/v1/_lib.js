@@ -344,6 +344,21 @@ function matchPattern(pattern, model) {
   return new RegExp(regexStr).test(model);
 }
 
+// --- 根据模型别名解析实际模型名 ---
+// 遍历所有供应商的 model_aliases / modelAliases，如果请求的模型名是别名则返回 { actualModel, provider }
+export function resolveModelAlias(model, providers) {
+  for (const provider of providers) {
+    if (!provider.enabled) continue;
+    const aliases = provider.model_aliases || provider.modelAliases;
+    if (aliases && typeof aliases === "object") {
+      if (aliases[model]) {
+        return { actualModel: aliases[model], provider };
+      }
+    }
+  }
+  return null;
+}
+
 // --- 根据模型名找到目标供应商 ---
 export function resolveProvider(model, providers, routes) {
   // 1. 先匹配路由规则（按优先级）

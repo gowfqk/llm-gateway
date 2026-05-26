@@ -7,7 +7,7 @@
 import {
   corsHeaders, jsonResponse, errorResponse,
   validateApiKey, getProviders, getRoutes,
-  resolveProvider, resolveProviderCandidates,
+  resolveProvider, resolveProviderCandidates, resolveModelAlias,
   buildUpstreamUrl, buildUpstreamHeaders,
   buildUpstreamBody, convertAnthropicResponse, convertGoogleResponse, convertCohereResponse,
   handleStreamRequest, logUsage, gatewayFetch, generateRequestId,
@@ -43,8 +43,16 @@ export async function onRequestPost(context) {
       return errorResponse("No providers configured. Please add providers in the dashboard.", 503, requestIdHeaders);
     }
 
+    // --- 模型别名解析 ---
+    let resolvedModel = model;
+    const aliasResult = resolveModelAlias(model, providers);
+    if (aliasResult) {
+      resolvedModel = aliasResult.actualModel;
+      console.log(`[alias] "${model}" → "${resolvedModel}" (via ${aliasResult.provider.name})`);
+    }
+
     // --- 路由匹配（含 fallback 候选列表） ---
-    const candidates = resolveProviderCandidates(model, providers, routes);
+    const candidates = resolveProviderCandidates(resolvedModel, providers, routes);
     if (!candidates || candidates.length === 0) {
       return errorResponse(`Model '${model}' not found. Available models: /v1/models`, 404, requestIdHeaders);
     }
@@ -59,13 +67,13 @@ export async function onRequestPost(context) {
 
       for (let attempt = 0; attempt < maxStreamRetries; attempt++) {
         const provider = candidates[attempt];
-        const upstreamUrl = buildUpstreamUrl(provider, model);
-        const upstreamHeaders = { ...buildUpstreamHeaders(provider, model), "x-request-id": requestId };
-        const upstreamBody = buildUpstreamBody(provider, model, body);
+        const upstreamUrl = buildUpstreamUrl(provider, resolvedModel);
+        const upstreamHeaders = { ...buildUpstreamHeaders(provider, resolvedModel), "x-request-id": requestId };
+        const upstreamBody = buildUpstreamBody(provider, resolvedModel, body);
         const startTime = Date.now();
 
         try {
-          const streamResp = await handleStreamRequest(upstreamUrl, upstreamHeaders, upstreamBody, provider.type, model);
+          const streamResp = await handleStreamRequest(upstreamUrl, upstreamHeaders, upstreamBody, provider.type, resolvedModel);
           
           // 流式成功 — 记录 usage（token 数在流式中无法精确统计，记录请求即可）
           context.waitUntil(logUsage(context.env, {
@@ -73,7 +81,7 @@ export async function onRequestPost(context) {
             userId,
             providerId: provider.id,
             providerName: provider.name,
-            model,
+            model: resolvedModel,
             promptTokens: 0,
             completionTokens: 0,
             totalTokens: 0,
@@ -94,7 +102,7 @@ export async function onRequestPost(context) {
             userId,
             providerId: provider.id,
             providerName: provider.name,
-            model,
+            model: resolvedModel,
             promptTokens: 0,
             completionTokens: 0,
             totalTokens: 0,
@@ -117,9 +125,9 @@ export async function onRequestPost(context) {
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const provider = candidates[attempt];
-      const upstreamUrl = buildUpstreamUrl(provider, model);
-      const upstreamHeaders = { ...buildUpstreamHeaders(provider, model), "x-request-id": requestId };
-      const upstreamBody = buildUpstreamBody(provider, model, body);
+      const upstreamUrl = buildUpstreamUrl(provider, resolvedModel);
+      const upstreamHeaders = { ...buildUpstreamHeaders(provider, resolvedModel), "x-request-id": requestId };
+      const upstreamBody = buildUpstreamBody(provider, resolvedModel, body);
 
       const startTime = Date.now();
       const controller = new AbortController();
@@ -158,7 +166,7 @@ export async function onRequestPost(context) {
           userId,
           providerId: provider.id,
           providerName: provider.name,
-          model,
+          model: resolvedModel,
           promptTokens: 0,
           completionTokens: 0,
           totalTokens: 0,
@@ -177,7 +185,7 @@ export async function onRequestPost(context) {
           userId,
           providerId: provider.id,
           providerName: provider.name,
-          model,
+          model: resolvedModel,
           promptTokens: 0,
           completionTokens: 0,
           totalTokens: 0,
@@ -191,11 +199,11 @@ export async function onRequestPost(context) {
       // --- 成功：格式转换 ---
       let result;
       if (provider.type === "anthropic") {
-        result = convertAnthropicResponse(respData, model);
+        result = convertAnthropicResponse(respData, resolvedModel);
       } else if (provider.type === "google") {
-        result = convertGoogleResponse(respData, model);
+        result = convertGoogleResponse(respData, resolvedModel);
       } else if (provider.type === "cohere") {
-        result = convertCohereResponse(respData, model);
+        result = convertCohereResponse(respData, resolvedModel);
       } else {
         result = respData;
       }
@@ -207,6 +215,7 @@ export async function onRequestPost(context) {
         providerId: provider.id,
         latency,
         attempt: attempt + 1,
+        ...(aliasResult ? { originalModel: model, resolvedModel } : {}),
       };
 
       // --- 记录成功的使用日志 ---
@@ -216,7 +225,7 @@ export async function onRequestPost(context) {
         userId,
         providerId: provider.id,
         providerName: provider.name,
-        model,
+        model: resolvedModel,
         promptTokens: usage.prompt_tokens || usage.promptTokens || 0,
         completionTokens: usage.completion_tokens || usage.completionTokens || 0,
         totalTokens: usage.total_tokens || usage.totalTokens || 0,

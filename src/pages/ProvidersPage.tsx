@@ -67,7 +67,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [formData, setFormData] = useState({
-    name: "", type: "custom" as ProviderType, baseUrl: "", apiKey: "", models: "", rateLimit: "",
+    name: "", type: "custom" as ProviderType, baseUrl: "", apiKey: "", models: "", rateLimit: "", modelAliases: "",
   });
   const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchModelsError, setFetchModelsError] = useState<string | null>(null);
@@ -230,7 +230,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
 
   const openCreate = () => {
     setEditingProvider(null);
-    setFormData({ name: "", type: "custom", baseUrl: "", apiKey: "", models: "", rateLimit: "" });
+    setFormData({ name: "", type: "custom", baseUrl: "", apiKey: "", models: "", rateLimit: "", modelAliases: "" });
     setFetchedModels([]);
     setModelSearch("");
     setShowModelPicker(false);
@@ -243,6 +243,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     setFormData({
       name: p.name, type: p.type, baseUrl: p.baseUrl, apiKey: p.apiKey,
       models: p.models.join(", "), rateLimit: p.rateLimit?.toString() || "",
+      modelAliases: p.modelAliases ? Object.entries(p.modelAliases).map(([alias, real]) => `${alias}=${real}`).join(", ") : "",
     });
     setFetchedModels([]);
     setModelSearch("");
@@ -265,10 +266,20 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
     }
     const models = formData.models.split(",").map((m) => m.trim()).filter(Boolean);
 
+    // Parse model aliases: "alias1=real1, alias2=real2" → { alias1: "real1", alias2: "real2" }
+    const modelAliases: Record<string, string> = {};
+    if (formData.modelAliases.trim()) {
+      formData.modelAliases.split(",").forEach((pair) => {
+        const [alias, real] = pair.split("=").map((s) => s.trim());
+        if (alias && real) modelAliases[alias] = real;
+      });
+    }
+    const hasAliases = Object.keys(modelAliases).length > 0;
+
     if (editingProvider) {
       const updated = providers.map((p) =>
         p.id === editingProvider.id
-          ? { ...p, name: formData.name, type: formData.type, baseUrl: formData.baseUrl, apiKey: formData.apiKey, models, rateLimit: formData.rateLimit ? parseInt(formData.rateLimit) : undefined }
+          ? { ...p, name: formData.name, type: formData.type, baseUrl: formData.baseUrl, apiKey: formData.apiKey, models, modelAliases: hasAliases ? modelAliases : undefined, rateLimit: formData.rateLimit ? parseInt(formData.rateLimit) : undefined }
           : p
       );
       setProviders(updated);
@@ -279,6 +290,7 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
       const newProvider: Provider = {
         id: generateId("prov"), name: formData.name, type: formData.type,
         baseUrl: formData.baseUrl, apiKey: formData.apiKey, enabled: true, models,
+        modelAliases: hasAliases ? modelAliases : undefined,
         rateLimit: formData.rateLimit ? parseInt(formData.rateLimit) : undefined,
         createdAt: new Date().toISOString(),
       };
@@ -903,6 +915,14 @@ export default function ProvidersPage({ onLogout, userEmail }: { onLogout: () =>
               <div className="space-y-2">
                 <Label>速率限制 (请求/分钟)</Label>
                 <Input value={formData.rateLimit} onChange={(e) => setFormData((prev) => ({ ...prev, rateLimit: e.target.value }))} placeholder="例如：500" type="number" />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>模型别名</Label>
+                  <span className="text-[10px] text-muted-foreground">格式: 别名=实际模型名</span>
+                </div>
+                <Textarea value={formData.modelAliases} onChange={(e) => setFormData((prev) => ({ ...prev, modelAliases: e.target.value }))} placeholder="gpt4=gpt-4o, claude=claude-sonnet-4-20250514" rows={2} />
+                <p className="text-[10px] text-muted-foreground">用逗号分隔多个别名。请求使用别名时会自动转换为实际模型名发送给供应商。</p>
               </div>
             </div>
             <DialogFooter>
