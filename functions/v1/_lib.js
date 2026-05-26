@@ -786,9 +786,15 @@ export function calculateCost(model, promptTokens, completionTokens) {
 }
 
 // --- 流式响应处理（将上游 SSE 转发，同时处理格式差异） ---
+// 返回 { response, getUsage } — response 是 SSE Response，getUsage() 返回流结束后的 token 统计
 export async function handleStreamRequest(upstreamUrl, upstreamHeaders, upstreamBody, providerType, model) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 300000); // 5 分钟超时
+
+  // 对 OpenAI 兼容供应商，注入 stream_options 以获取流式 usage
+  if (providerType !== "anthropic" && providerType !== "google") {
+    upstreamBody.stream_options = { include_usage: true };
+  }
 
   let upstreamResp;
   try {
@@ -815,9 +821,75 @@ export async function handleStreamRequest(upstreamUrl, upstreamHeaders, upstream
     return convertAnthropicStream(upstreamResp, model);
   }
 
-  // OpenAI 兼容格式 — 直接透传
-  // 直接返回上游 ReadableStream
-  return new Response(upstreamResp.body, {
+  // OpenAI 兼容格式 — 透传但拦截 usage chunk
+  return convertOpenAICompatibleStream(upstreamResp, model);
+}
+
+// --- OpenAI 兼容流式转换（透传 + 拦截 usage） ---
+function convertOpenAICompatibleStream(upstreamResp, model) {
+  const reader = upstreamResp.body.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+
+  // 收集 usage 信息
+  const usageData = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  let buffer = "";
+
+  const stream = new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          // 处理缓冲区中剩余内容
+          if (buffer.trim()) {
+            controller.enqueue(encoder.encode(buffer));
+          }
+          controller.close();
+          return;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        // 保留最后一个不完整的行
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) {
+            // 保留空行（SSE 格式需要）
+            controller.enqueue(encoder.encode(line + "\n"));
+            continue;
+          }
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") {
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            continue;
+          }
+
+          try {
+            const chunk = JSON.parse(jsonStr);
+            // 提取 usage（OpenAI 在最后一个 chunk 的 usage 字段返回）
+            if (chunk.usage) {
+              usageData.prompt_tokens = chunk.usage.prompt_tokens || 0;
+              usageData.completion_tokens = chunk.usage.completion_tokens || 0;
+              usageData.total_tokens = chunk.usage.total_tokens || 0;
+            }
+          } catch {
+            // JSON 解析失败，不影响转发
+          }
+
+          // 原样转发
+          controller.enqueue(encoder.encode(line + "\n"));
+        }
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel() {
+      reader.cancel();
+    },
+  });
+
+  const response = new Response(stream, {
     status: 200,
     headers: {
       "Content-Type": "text/event-stream",
@@ -826,13 +898,21 @@ export async function handleStreamRequest(upstreamUrl, upstreamHeaders, upstream
       ...corsHeaders,
     },
   });
+
+  // 附加 usage 获取方法到 response（通过自定义属性）
+  response._streamUsage = usageData;
+  return response;
 }
 
 // --- Anthropic 流式转换 ---
-async function convertAnthropicStream(upstreamResp, model) {
+function convertAnthropicStream(upstreamResp, model) {
   const reader = upstreamResp.body.getReader();
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
+
+  // 收集 usage 信息
+  const usageData = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  let buffer = "";
 
   const stream = new ReadableStream({
     async pull(controller) {
@@ -845,8 +925,9 @@ async function convertAnthropicStream(upstreamResp, model) {
           return;
         }
 
-        const text = decoder.decode(value, { stream: true });
-        const lines = text.split("\n");
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
@@ -872,6 +953,29 @@ async function convertAnthropicStream(upstreamResp, model) {
                 }],
               };
               controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            } else if (evt.type === "message_delta") {
+              // Anthropic message_delta 包含 usage
+              if (evt.usage) {
+                usageData.completion_tokens = evt.usage.output_tokens || 0;
+                usageData.total_tokens = usageData.prompt_tokens + usageData.completion_tokens;
+              }
+              const chunk = {
+                id: `chatcmpl-${model}`,
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model,
+                choices: [{
+                  index: 0,
+                  delta: {},
+                  finish_reason: evt.delta?.stop_reason === "end_turn" ? "stop" : evt.delta?.stop_reason || "stop",
+                }],
+              };
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            } else if (evt.type === "message_start") {
+              // message_start 包含 input_tokens
+              if (evt.message?.usage) {
+                usageData.prompt_tokens = evt.message.usage.input_tokens || 0;
+              }
             } else if (evt.type === "message_stop") {
               const chunk = {
                 id: `chatcmpl-${model}`,
@@ -900,7 +1004,7 @@ async function convertAnthropicStream(upstreamResp, model) {
     },
   });
 
-  return new Response(stream, {
+  const response = new Response(stream, {
     status: 200,
     headers: {
       "Content-Type": "text/event-stream",
@@ -909,4 +1013,8 @@ async function convertAnthropicStream(upstreamResp, model) {
       ...corsHeaders,
     },
   });
+
+  // 附加 usage 获取方法到 response
+  response._streamUsage = usageData;
+  return response;
 }

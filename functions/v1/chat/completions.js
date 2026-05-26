@@ -87,20 +87,27 @@ export async function onRequestPost(context) {
         try {
           const streamResp = await handleStreamRequest(upstreamUrl, upstreamHeaders, upstreamBody, provider.type, resolvedModel);
           
-          // 流式成功 — 记录 usage（token 数在流式中无法精确统计，记录请求即可）
-          context.waitUntil(logUsage(context.env, {
-            id: `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            userId,
-            providerId: provider.id,
-            providerName: provider.name,
-            model: resolvedModel,
-            promptTokens: 0,
-            completionTokens: 0,
-            totalTokens: 0,
-            timestamp: new Date().toISOString(),
-            status: "success",
-            latency: Date.now() - startTime,
-          }));
+          // 流式成功 — 延迟记录 usage（等待流结束后从 _streamUsage 获取 token 统计）
+          const streamUsage = streamResp._streamUsage;
+          const streamStartTime = startTime;
+          context.waitUntil((async () => {
+            // 等待一段时间让流传输完成，然后记录 usage
+            // _streamUsage 对象会在流传输过程中被实时更新
+            await new Promise(r => setTimeout(r, 30000)); // 等 30s 让流传完
+            await logUsage(context.env, {
+              id: `rec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              userId,
+              providerId: provider.id,
+              providerName: provider.name,
+              model: resolvedModel,
+              promptTokens: streamUsage?.prompt_tokens || 0,
+              completionTokens: streamUsage?.completion_tokens || 0,
+              totalTokens: streamUsage?.total_tokens || 0,
+              timestamp: new Date().toISOString(),
+              status: "success",
+              latency: Date.now() - streamStartTime,
+            });
+          })());
 
           return streamResp;
         } catch (streamErr) {
