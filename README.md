@@ -9,7 +9,8 @@
 - **自动获取模型** — 从 `/v1/models` API 自动拉取可用模型，带搜索和勾选功能
 - **智能路由** — 按模型名称模式匹配，将请求路由到最优供应商，支持 Fallback 重试
 - **模型别名** — 支持简单别名 (`gpt4=gpt-4o`) 和供应商别名 (`gpt4=openai/gpt-4o`)，通过别名同时指定供应商+模型
-- **用量追踪** — Token 计数、成本估算、请求延迟等完整用量统计
+- **API Key 权限** — 每个 Key 可独立配置允许调用的模型白名单，支持通配符，细粒度访问控制
+- **用量追踪** — Token 计数、成本估算、请求延迟等完整用量统计（流式/非流式均支持）
 - **API 连接测试** — 一键测试供应商 API 连通性，批量测试支持
 - **暗色模式** — 支持浅色/深色/跟随系统三种主题模式
 - **移动端适配** — 响应式侧边栏，移动端抽屉式导航
@@ -210,6 +211,35 @@ response = client.chat.completions.create(
 )
 ```
 
+### API Key 权限管理
+
+每个 API Key 可以独立配置允许调用的模型白名单，实现细粒度访问控制：
+
+```
+设置 → 网关 API Key → 展开某个 Key → 允许调用的模型
+```
+
+| 配置 | 效果 |
+|---|---|
+| 留空 | 允许调用所有模型（默认） |
+| `gpt-4o, claude-*` | 仅允许 gpt-4o 和所有 claude 开头的模型 |
+| `deepseek-chat` | 仅允许 deepseek-chat |
+| `*` | 显式允许全部（等同留空） |
+
+支持通配符 `*`，模式匹配规则同路由规则。权限同时检查原始模型名和别名解析后的模型名。
+
+未授权的模型调用会收到 403 响应：
+```json
+{
+  "error": {
+    "message": "Model 'gpt-4o' is not allowed for this API key. Allowed models: deepseek-chat",
+    "type": "invalid_request_error"
+  }
+}
+```
+
+> **注意：** 需要执行数据库迁移 `004_api_key_permissions.sql` 才能启用此功能。未执行迁移前所有 Key 默认无限制。
+
 ### 可用端点
 
 | 端点 | 说明 |
@@ -234,6 +264,7 @@ response = client.chat.completions.create(
 - `.env` 和 `.dev.vars` 已在 `.gitignore` 中排除
 - API Key 使用 `gw_live_sk_` 前缀，便于识别和管理
 - 网关 API Key 验证支持缓存，避免每次请求都查数据库
+- 每个 API Key 可配置模型白名单，限制可调用的模型范围
 
 ## ❓ 常见问题
 
