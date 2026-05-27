@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { useState, useEffect } from "react";
-import { Key, Download, RefreshCw, Trash2, Cloud, Copy, Plus } from "lucide-react";
+import { Key, Download, RefreshCw, Trash2, Cloud, Copy, Plus, Shield, ChevronDown, ChevronUp } from "lucide-react";
 import { exportConfigurationData, importConfigurationData, clearUsageLogs } from "@/lib/store";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -15,13 +17,36 @@ import {
   generateGatewayApiKey,
   type GatewayConfig,
 } from "@/lib/gateway-config";
+import type { ApiKeyEntry } from "@/types";
 
 export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => void; userEmail: string }) {
-  const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig>({ proxyUrl: "", apiKeys: [] });
+  const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig>({ proxyUrl: "", apiKeys: [], apiKeyEntries: [] });
+  const [expandedKeys, setExpandedKeys] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
-    loadGatewayConfig().then(setGatewayConfig);
+    loadGatewayConfig().then((config) => {
+      // 如果有旧格式 apiKeys 但无 apiKeyEntries，自动迁移
+      if (config.apiKeys.length > 0 && (!config.apiKeyEntries || config.apiKeyEntries.length === 0)) {
+        const migrated: ApiKeyEntry[] = config.apiKeys.map((key) => ({ key, name: "", allowedModels: [] }));
+        setGatewayConfig({ ...config, apiKeyEntries: migrated });
+      } else {
+        setGatewayConfig(config);
+      }
+    });
   }, []);
+
+  // 获取当前 entries（优先使用 apiKeyEntries）
+  const entries: ApiKeyEntry[] = gatewayConfig.apiKeyEntries && gatewayConfig.apiKeyEntries.length > 0
+    ? gatewayConfig.apiKeyEntries
+    : gatewayConfig.apiKeys.map((key) => ({ key, name: "", allowedModels: [] }));
+
+  const updateEntries = (newEntries: ApiKeyEntry[]) => {
+    setGatewayConfig((prev) => ({
+      ...prev,
+      apiKeys: newEntries.map((e) => e.key),
+      apiKeyEntries: newEntries,
+    }));
+  };
 
   const handleSave = async () => {
     await saveGatewayConfig(gatewayConfig);
@@ -30,27 +55,21 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
 
   const handleRegenerateKey = (index: number) => {
     const newKey = generateGatewayApiKey();
-    setGatewayConfig((prev) => ({
-      ...prev,
-      apiKeys: prev.apiKeys.map((key, keyIndex) => (keyIndex === index ? newKey : key)),
-    }));
+    const newEntries = entries.map((entry, i) => (i === index ? { ...entry, key: newKey } : entry));
+    updateEntries(newEntries);
     toast.success("API Key 已重新生成");
   };
 
   const handleAddApiKey = () => {
     const newKey = generateGatewayApiKey();
-    setGatewayConfig((prev) => ({
-      ...prev,
-      apiKeys: [...prev.apiKeys, newKey],
-    }));
+    const newEntry: ApiKeyEntry = { key: newKey, name: "", allowedModels: [] };
+    updateEntries([...entries, newEntry]);
     toast.success("已添加新的 API Key");
   };
 
   const handleDeleteApiKey = (index: number) => {
-    setGatewayConfig((prev) => ({
-      ...prev,
-      apiKeys: prev.apiKeys.filter((_, keyIndex) => keyIndex !== index),
-    }));
+    updateEntries(entries.filter((_, i) => i !== index));
+    setExpandedKeys((prev) => { const next = { ...prev }; delete next[index]; return next; });
     toast.success("API Key 已删除");
   };
 
@@ -61,6 +80,21 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
     } catch {
       toast.error("复制失败，请手动复制");
     }
+  };
+
+  const handleUpdateEntryName = (index: number, name: string) => {
+    const newEntries = entries.map((entry, i) => (i === index ? { ...entry, name } : entry));
+    updateEntries(newEntries);
+  };
+
+  const handleUpdateAllowedModels = (index: number, modelsStr: string) => {
+    const allowedModels = modelsStr.split(",").map((m) => m.trim()).filter(Boolean);
+    const newEntries = entries.map((entry, i) => (i === index ? { ...entry, allowedModels } : entry));
+    updateEntries(newEntries);
+  };
+
+  const toggleExpanded = (index: number) => {
+    setExpandedKeys((prev) => ({ ...prev, [index]: !prev[index] }));
   };
 
   const handleClearLogs = async () => {
@@ -147,29 +181,42 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
               <Key className="w-5 h-5" />
               网关 API Key
             </CardTitle>
-            <CardDescription>支持多个客户端凭证。新增或重新生成后，点击底部“保存设置”才会正式持久化。</CardDescription>
+            <CardDescription>支持多个客户端凭证，每个 Key 可设置模型访问权限。新增或修改后，点击底部"保存设置"才会正式持久化。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-sm text-muted-foreground">当前共 {gatewayConfig.apiKeys.length} 个 API Key</p>
+              <p className="text-sm text-muted-foreground">当前共 {entries.length} 个 API Key</p>
               <Button variant="outline" size="sm" onClick={handleAddApiKey}>
                 <Plus className="w-4 h-4 mr-1" />
                 新增 API Key
               </Button>
             </div>
 
-            {gatewayConfig.apiKeys.length === 0 ? (
+            {entries.length === 0 ? (
               <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                 暂无 API Key，请先创建一个。
               </div>
             ) : (
               <div className="space-y-3">
-                {gatewayConfig.apiKeys.map((apiKey, index) => (
-                  <div key={`${apiKey}-${index}`} className="rounded-lg border p-3 space-y-3">
+                {entries.map((entry, index) => (
+                  <div key={`${entry.key}-${index}`} className="rounded-lg border p-3 space-y-3">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <Label>API Key #{index + 1}</Label>
+                      <div className="flex items-center gap-2">
+                        <Label className="font-medium">
+                          {entry.name ? entry.name : `API Key #${index + 1}`}
+                        </Label>
+                        {entry.allowedModels && entry.allowedModels.length > 0 && (
+                          <Badge variant="secondary" className="text-xs gap-1">
+                            <Shield className="w-3 h-3" />
+                            {entry.allowedModels.length} 个模型
+                          </Badge>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Button variant="outline" size="sm" onClick={() => handleCopyApiKey(apiKey)}>
+                        <Button variant="ghost" size="sm" onClick={() => toggleExpanded(index)} title="展开权限设置">
+                          {expandedKeys[index] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleCopyApiKey(entry.key)}>
                           <Copy className="w-4 h-4 mr-1" />
                           复制
                         </Button>
@@ -183,7 +230,37 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
                         </Button>
                       </div>
                     </div>
-                    <Input value={apiKey} readOnly className="font-mono" />
+                    <Input value={entry.key} readOnly className="font-mono text-sm" />
+
+                    {expandedKeys[index] && (
+                      <div className="space-y-3 pt-2 border-t">
+                        <div className="space-y-2">
+                          <Label className="text-xs">标签名称（可选）</Label>
+                          <Input
+                            value={entry.name || ""}
+                            onChange={(e) => handleUpdateEntryName(index, e.target.value)}
+                            placeholder="例如：生产环境、测试用"
+                            className="text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Shield className="w-4 h-4 text-muted-foreground" />
+                            <Label className="text-xs">允许调用的模型（留空表示无限制）</Label>
+                          </div>
+                          <Textarea
+                            value={(entry.allowedModels || []).join(", ")}
+                            onChange={(e) => handleUpdateAllowedModels(index, e.target.value)}
+                            placeholder="gpt-4o, claude-*, deepseek-chat（支持通配符 *，逗号分隔）"
+                            rows={2}
+                            className="text-sm"
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            留空 = 允许所有模型。支持通配符：<code className="bg-muted px-1 rounded">gpt-*</code> 匹配所有 gpt 开头的模型，<code className="bg-muted px-1 rounded">*</code> 允许全部。别名也会被检查。
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -215,7 +292,7 @@ export default function SettingsPage({ onLogout, userEmail }: { onLogout: () => 
             </div>
             <Separator />
             <p className="text-xs text-muted-foreground">
-              导出文件包含供应商、路由和网关设置，不包含使用日志；“清空日志”只删除 usage 日志，不会影响配置。
+              导出文件包含供应商、路由和网关设置，不包含使用日志；"清空日志"只删除 usage 日志，不会影响配置。
             </p>
           </CardContent>
         </Card>

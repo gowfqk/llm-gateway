@@ -17,11 +17,26 @@ const defaultConfig: GatewayConfig = {
 };
 
 function normalizeGatewayConfig(config?: Partial<GatewayConfig> | null): GatewayConfig {
+  const apiKeys = Array.isArray(config?.apiKeys)
+    ? [...new Set(config.apiKeys.filter((key): key is string => typeof key === "string" && key.trim().length > 0))]
+    : [];
+
+  // Normalize apiKeyEntries
+  let apiKeyEntries: GatewayConfig["apiKeyEntries"] = undefined;
+  if (Array.isArray(config?.apiKeyEntries) && config.apiKeyEntries.length > 0) {
+    apiKeyEntries = config.apiKeyEntries
+      .filter((e) => e && typeof e.key === "string" && e.key.trim().length > 0)
+      .map((e) => ({
+        key: e.key.trim(),
+        name: typeof e.name === "string" ? e.name : "",
+        allowedModels: Array.isArray(e.allowedModels) ? e.allowedModels.filter((m: unknown): m is string => typeof m === "string" && m.trim().length > 0) : [],
+      }));
+  }
+
   return {
     proxyUrl: typeof config?.proxyUrl === "string" ? config.proxyUrl : "",
-    apiKeys: Array.isArray(config?.apiKeys)
-      ? [...new Set(config.apiKeys.filter((key): key is string => typeof key === "string" && key.trim().length > 0))]
-      : [],
+    apiKeys,
+    ...(apiKeyEntries && apiKeyEntries.length > 0 ? { apiKeyEntries } : {}),
   };
 }
 

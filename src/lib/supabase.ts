@@ -48,7 +48,7 @@ export { loadRuntimeConfig };
 export async function fetchGatewayConfig(userId: string): Promise<GatewayConfig | null> {
   const { data, error } = await supabase
     .from(TABLE_GATEWAY_CONFIGS)
-    .select("proxy_url, api_keys")
+    .select("proxy_url, api_keys, api_key_entries")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -58,6 +58,7 @@ export async function fetchGatewayConfig(userId: string): Promise<GatewayConfig 
   return {
     proxyUrl: (data.proxy_url as string) || "",
     apiKeys: Array.isArray(data.api_keys) ? (data.api_keys as string[]) : [],
+    apiKeyEntries: Array.isArray(data.api_key_entries) ? data.api_key_entries : [],
   };
 }
 
@@ -67,6 +68,7 @@ export async function saveGatewayConfig(userId: string, config: GatewayConfig): 
       user_id: userId,
       proxy_url: config.proxyUrl,
       api_keys: config.apiKeys,
+      api_key_entries: config.apiKeyEntries || [],
     },
     { onConflict: "user_id" }
   );

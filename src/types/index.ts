@@ -28,9 +28,16 @@ export interface ProxyConfig {
   password?: string;
 }
 
+export interface ApiKeyEntry {
+  key: string;
+  name?: string; // 可选标签，如 "生产环境"、"测试"
+  allowedModels?: string[]; // 允许调用的模型列表（空或不设表示无限制）；支持通配符如 "gpt-*"
+}
+
 export interface GatewayConfig {
   proxyUrl: string; // 自定义代理 URL，如 "https://your-proxy.com/proxy"
-  apiKeys: string[];
+  apiKeys: string[]; // 保持兼容：纯 key 字符串数组
+  apiKeyEntries?: ApiKeyEntry[]; // 带权限的 key 列表（优先使用）
 }
 
 export interface Provider {

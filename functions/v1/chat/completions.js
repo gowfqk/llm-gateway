@@ -7,7 +7,7 @@
 import {
   corsHeaders, jsonResponse, errorResponse,
   validateApiKey, getProviders, getRoutes,
-  resolveProvider, resolveProviderCandidates, resolveModelAlias,
+  resolveProvider, resolveProviderCandidates, resolveModelAlias, isModelAllowed,
   buildUpstreamUrl, buildUpstreamHeaders,
   buildUpstreamBody, convertAnthropicResponse, convertGoogleResponse, convertCohereResponse,
   handleStreamRequest, logUsage, gatewayFetch, generateRequestId,
@@ -55,6 +55,17 @@ export async function onRequestPost(context) {
       } else {
         console.log(`[alias] "${model}" → "${resolvedModel}" (via ${aliasResult.provider.name})`);
       }
+    }
+
+    // --- 模型权限检查 ---
+    // allowedModels 为 null 时表示无限制；否则检查原始模型名和解析后的模型名
+    const { allowedModels } = authResult;
+    if (allowedModels && !isModelAllowed(model, allowedModels) && !isModelAllowed(resolvedModel, allowedModels)) {
+      return errorResponse(
+        `Model '${model}' is not allowed for this API key. Allowed models: ${allowedModels.join(", ")}`,
+        403,
+        requestIdHeaders
+      );
     }
 
     // --- 路由匹配（含 fallback 候选列表） ---

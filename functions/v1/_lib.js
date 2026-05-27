@@ -144,7 +144,7 @@ function setCachedKeyResult(apiKey, result) {
 }
 
 async function validateGatewayApiKey(apiKey, env) {
-  if (!apiKey) return { isValid: false, userId: null };
+  if (!apiKey) return { isValid: false, userId: null, allowedModels: null };
 
   // 检查缓存
   const cached = getCachedKeyResult(apiKey);
@@ -152,20 +152,23 @@ async function validateGatewayApiKey(apiKey, env) {
   
   const staticKeys = parseStaticGatewayKeys(env);
   if (staticKeys.includes(apiKey)) {
-    // 静态密钥无法关联到特定用户，返回 null
-    const result = { isValid: true, userId: null };
+    // 静态密钥无法关联到特定用户，无模型限制
+    const result = { isValid: true, userId: null, allowedModels: null };
     setCachedKeyResult(apiKey, result);
     return result;
   }
 
   const supabaseUrl = env?.SUPABASE_URL;
   const serviceRoleKey = env?.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) return { isValid: false, userId: null };
+  if (!supabaseUrl || !serviceRoleKey) return { isValid: false, userId: null, allowedModels: null };
+
+  // 查询时同时获取 api_key_entries 以提取权限
+  const selectFields = "user_id,api_key_entries";
 
   // 支持两种格式：gw_live_sk_xxx 和 {gw_live_sk_xxx}
   // 先尝试带花括号的格式（兼容旧数据）
   const queryValueWithBraces = encodeURIComponent(`{${apiKey}}`);
-  const urlWithBraces = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/gateway_configs?select=user_id&api_keys=cs.${queryValueWithBraces}&limit=1`;
+  const urlWithBraces = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/gateway_configs?select=${selectFields}&api_keys=cs.${queryValueWithBraces}&limit=1`;
   
   try {
     const response = await fetch(urlWithBraces, {
@@ -180,7 +183,8 @@ async function validateGatewayApiKey(apiKey, env) {
     if (response.ok) {
       const rows = await response.json().catch(() => []);
       if (Array.isArray(rows) && rows.length > 0) {
-        const result = { isValid: true, userId: rows[0].user_id };
+        const allowedModels = extractAllowedModels(apiKey, rows[0].api_key_entries);
+        const result = { isValid: true, userId: rows[0].user_id, allowedModels };
         setCachedKeyResult(apiKey, result);
         return result;
       }
@@ -191,7 +195,7 @@ async function validateGatewayApiKey(apiKey, env) {
 
   // 如果不带花括号的格式，尝试直接匹配
   const queryValueWithoutBraces = encodeURIComponent(apiKey);
-  const urlWithoutBraces = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/gateway_configs?select=user_id&api_keys=cs.${queryValueWithoutBraces}&limit=1`;
+  const urlWithoutBraces = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/gateway_configs?select=${selectFields}&api_keys=cs.${queryValueWithoutBraces}&limit=1`;
   
   const response = await fetch(urlWithoutBraces, {
     method: "GET",
@@ -208,15 +212,44 @@ async function validateGatewayApiKey(apiKey, env) {
 
   const rows = await response.json().catch(() => []);
   if (Array.isArray(rows) && rows.length > 0) {
-    const result = { isValid: true, userId: rows[0].user_id };
+    const allowedModels = extractAllowedModels(apiKey, rows[0].api_key_entries);
+    const result = { isValid: true, userId: rows[0].user_id, allowedModels };
     setCachedKeyResult(apiKey, result);
     return result;
   }
   
   // 缓存无效 key 结果（较短 TTL 防止暴力尝试）
-  const invalidResult = { isValid: false, userId: null };
+  const invalidResult = { isValid: false, userId: null, allowedModels: null };
   API_KEY_CACHE.set(apiKey, { result: invalidResult, expiresAt: Date.now() + 10_000 }); // 10s
   return invalidResult;
+}
+
+/**
+ * 从 api_key_entries JSONB 中提取指定 key 的 allowedModels
+ * 返回 null 表示无限制，返回 string[] 表示白名单（支持通配符）
+ */
+function extractAllowedModels(apiKey, apiKeyEntries) {
+  if (!Array.isArray(apiKeyEntries) || apiKeyEntries.length === 0) return null;
+  const entry = apiKeyEntries.find((e) => e.key === apiKey);
+  if (!entry) return null; // key 不在 entries 中（旧格式），无限制
+  if (!Array.isArray(entry.allowedModels) || entry.allowedModels.length === 0) return null;
+  return entry.allowedModels;
+}
+
+/**
+ * 检查模型是否在允许列表中（支持通配符匹配）
+ * allowedModels 为 null 时表示无限制
+ */
+export function isModelAllowed(model, allowedModels) {
+  if (!allowedModels || allowedModels.length === 0) return true; // 无限制
+  for (const pattern of allowedModels) {
+    if (pattern === model) return true;
+    if (pattern === "*") return true;
+    // 通配符匹配
+    const regexStr = "^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$";
+    if (new RegExp(regexStr).test(model)) return true;
+  }
+  return false;
 }
 
 async function hasGatewayAuthConfigured(env) {
@@ -329,7 +362,7 @@ export async function getRoutes(env) {
 export async function validateApiKey(request, env) {
   if (!(await hasGatewayAuthConfigured(env))) {
     // 如果没配置任何密钥，允许所有请求（开发模式）
-    return { isValid: true, userId: null };
+    return { isValid: true, userId: null, allowedModels: null };
   }
 
   const token = extractGatewayApiKey(request);
