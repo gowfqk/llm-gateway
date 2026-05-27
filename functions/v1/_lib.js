@@ -162,56 +162,38 @@ async function validateGatewayApiKey(apiKey, env) {
   const serviceRoleKey = env?.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) return { isValid: false, userId: null, allowedModels: null };
 
-  // 查询时同时获取 api_key_entries 以提取权限
-  const selectFields = "user_id,api_key_entries";
+  // 查询时尝试获取 api_key_entries 以提取权限
+  // 注意：api_key_entries 列可能尚未创建（migration 未执行），需要优雅降级
+  const selectWithPermissions = "user_id,api_key_entries";
+  const selectBasic = "user_id";
 
   // 支持两种格式：gw_live_sk_xxx 和 {gw_live_sk_xxx}
   // 先尝试带花括号的格式（兼容旧数据）
   const queryValueWithBraces = encodeURIComponent(`{${apiKey}}`);
-  const urlWithBraces = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/gateway_configs?select=${selectFields}&api_keys=cs.${queryValueWithBraces}&limit=1`;
   
-  try {
-    const response = await fetch(urlWithBraces, {
-      method: "GET",
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        Accept: "application/json",
-      },
-    });
-
-    if (response.ok) {
-      const rows = await response.json().catch(() => []);
-      if (Array.isArray(rows) && rows.length > 0) {
-        const allowedModels = extractAllowedModels(apiKey, rows[0].api_key_entries);
-        const result = { isValid: true, userId: rows[0].user_id, allowedModels };
-        setCachedKeyResult(apiKey, result);
-        return result;
-      }
-    }
-  } catch (e) {
-    console.error("[Gateway auth] lookup (with braces) failed:", e);
+  // 尝试带 api_key_entries 的查询，失败则回退到基础查询
+  let rows = await queryGatewayConfig(supabaseUrl, serviceRoleKey, queryValueWithBraces, selectWithPermissions);
+  if (rows === null) {
+    // 可能是 api_key_entries 列不存在，回退
+    rows = await queryGatewayConfig(supabaseUrl, serviceRoleKey, queryValueWithBraces, selectBasic);
+  }
+  
+  if (rows && rows.length > 0) {
+    const allowedModels = extractAllowedModels(apiKey, rows[0].api_key_entries);
+    const result = { isValid: true, userId: rows[0].user_id, allowedModels };
+    setCachedKeyResult(apiKey, result);
+    return result;
   }
 
   // 如果不带花括号的格式，尝试直接匹配
   const queryValueWithoutBraces = encodeURIComponent(apiKey);
-  const urlWithoutBraces = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/gateway_configs?select=${selectFields}&api_keys=cs.${queryValueWithoutBraces}&limit=1`;
   
-  const response = await fetch(urlWithoutBraces, {
-    method: "GET",
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Gateway auth lookup failed: HTTP ${response.status}`);
+  rows = await queryGatewayConfig(supabaseUrl, serviceRoleKey, queryValueWithoutBraces, selectWithPermissions);
+  if (rows === null) {
+    rows = await queryGatewayConfig(supabaseUrl, serviceRoleKey, queryValueWithoutBraces, selectBasic);
   }
-
-  const rows = await response.json().catch(() => []);
-  if (Array.isArray(rows) && rows.length > 0) {
+  
+  if (rows && rows.length > 0) {
     const allowedModels = extractAllowedModels(apiKey, rows[0].api_key_entries);
     const result = { isValid: true, userId: rows[0].user_id, allowedModels };
     setCachedKeyResult(apiKey, result);
@@ -222,6 +204,29 @@ async function validateGatewayApiKey(apiKey, env) {
   const invalidResult = { isValid: false, userId: null, allowedModels: null };
   API_KEY_CACHE.set(apiKey, { result: invalidResult, expiresAt: Date.now() + 10_000 }); // 10s
   return invalidResult;
+}
+
+/**
+ * 查询 gateway_configs 表，返回匹配的行或 null（查询失败时返回 null）
+ */
+async function queryGatewayConfig(supabaseUrl, serviceRoleKey, encodedKeyValue, selectFields) {
+  const url = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/gateway_configs?select=${selectFields}&api_keys=cs.${encodedKeyValue}&limit=1`;
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) return null; // 可能是列不存在或其他错误
+    const rows = await response.json().catch(() => []);
+    return Array.isArray(rows) ? rows : null;
+  } catch (e) {
+    console.error("[Gateway auth] query failed:", e);
+    return null;
+  }
 }
 
 /**
