@@ -146,13 +146,14 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
     if (idx < 0) return;
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const swapId = sorted[swapIdx].id;
     const tempPriority = sorted[idx].priority;
     sorted[idx] = { ...sorted[idx], priority: sorted[swapIdx].priority };
     sorted[swapIdx] = { ...sorted[swapIdx], priority: tempPriority };
     const updated = sorted.sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
     setRoutes(updated);
     await saveRouteData(updated.find((r) => r.id === id)!);
-    await saveRouteData(updated.find((r) => r.priority === tempPriority)!);
+    await saveRouteData(updated.find((r) => r.id === swapId)!);
   };
 
   // Candidate helpers

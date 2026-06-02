@@ -92,6 +92,7 @@ export async function fetchProviders(userId: string): Promise<Provider[]> {
     enabled: row.enabled as boolean,
     models: (row.models as string[]) || [],
     rateLimit: row.rate_limit as number | undefined,
+    modelAliases: (row.model_aliases as Record<string, string>) || undefined,
     // proxy_json 列可能不存在，使用 undefined 作为默认值
     proxy: (row.proxy_json as Provider["proxy"] | null) ?? undefined,
     createdAt: row.created_at as string,
@@ -110,6 +111,7 @@ export async function saveProvider(userId: string, provider: Provider): Promise<
       enabled: provider.enabled,
       models: provider.models,
       rate_limit: provider.rateLimit,
+      model_aliases: provider.modelAliases ?? null,
       proxy_json: provider.proxy ?? null,
       created_at: provider.createdAt,
     });
@@ -128,6 +130,7 @@ export async function saveProvider(userId: string, provider: Provider): Promise<
         enabled: provider.enabled,
         models: provider.models,
         rate_limit: provider.rateLimit,
+        model_aliases: provider.modelAliases ?? null,
         created_at: provider.createdAt,
       });
       if (error) throw error;
