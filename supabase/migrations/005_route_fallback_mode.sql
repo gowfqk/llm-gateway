@@ -5,3 +5,6 @@ ALTER TABLE route_rules
 
 -- Migrate existing routes to mode='pattern'
 UPDATE route_rules SET mode = 'pattern' WHERE mode IS NULL OR mode = '';
+
+-- Allow pattern to be null (fallback mode doesn't use pattern)
+ALTER TABLE route_rules ALTER COLUMN pattern DROP NOT NULL;
