@@ -212,7 +212,7 @@ export async function saveRoute(userId: string, route: RouteRule): Promise<void>
     user_id: userId,
     name: route.name,
     mode: route.mode || "pattern",
-    pattern: route.pattern,
+    pattern: route.pattern || "*",  // fallback 模式没有 pattern，用 * 占位避免 NOT NULL 报错
     target_provider_id: route.targetProviderId,
     ordered_candidates: route.orderedCandidates ?? null,
     priority: route.priority,
@@ -258,7 +258,7 @@ export async function batchSaveRoutes(userId: string, routes: RouteRule[]): Prom
       user_id: userId,
       name: r.name,
       mode: r.mode || "pattern",
-      pattern: r.pattern,
+      pattern: r.pattern || "*",
       target_provider_id: r.targetProviderId,
       ordered_candidates: r.orderedCandidates ?? null,
       priority: r.priority,
