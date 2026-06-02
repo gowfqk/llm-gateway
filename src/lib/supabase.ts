@@ -246,6 +246,7 @@ export async function batchSaveProviders(userId: string, providers: Provider[]):
       enabled: p.enabled,
       models: p.models,
       rate_limit: p.rateLimit,
+      model_aliases: p.modelAliases ?? null,
       proxy_json: p.proxy ?? null,
       created_at: p.createdAt,
     }))

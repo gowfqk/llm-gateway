@@ -546,7 +546,7 @@ export function resolveProviderCandidates(model, providers, routes) {
 }
 
 // --- 构建上游请求 URL ---
-export function buildUpstreamUrl(provider, model) {
+export function buildUpstreamUrl(provider, model, stream = false) {
   let base = provider.base_url.replace(/\/+$/, "");
   
   // Anthropic 特殊处理
@@ -556,7 +556,8 @@ export function buildUpstreamUrl(provider, model) {
   
   // Google AI 特殊处理
   if (provider.type === "google") {
-    return `${base}/models/${model}:generateContent`;
+    const endpoint = stream ? "streamGenerateContent" : "generateContent";
+    return `${base}/models/${model}:${endpoint}${stream ? "?alt=sse" : ""}`;
   }
 
   // Cohere v2 特殊处理
@@ -624,10 +625,12 @@ export function buildUpstreamBody(provider, model, body) {
         parts: [{ text: m.content }],
       });
     }
+    const generationConfig = {};
+    if (body.temperature !== undefined) generationConfig.temperature = body.temperature;
+    if (body.max_tokens !== undefined) generationConfig.maxOutputTokens = body.max_tokens;
     return {
       contents,
-      ...(body.temperature !== undefined ? { generationConfig: { temperature: body.temperature } } : {}),
-      ...(body.max_tokens !== undefined ? { generationConfig: { maxOutputTokens: body.max_tokens } } : {}),
+      ...(Object.keys(generationConfig).length ? { generationConfig } : {}),
     };
   }
 

@@ -91,7 +91,7 @@ export async function onRequestPost(context) {
 
       for (let attempt = 0; attempt < maxStreamRetries; attempt++) {
         const { provider, resolvedModel: actualModel } = candidates[attempt];
-        const upstreamUrl = buildUpstreamUrl(provider, actualModel);
+        const upstreamUrl = buildUpstreamUrl(provider, actualModel, true);
         const upstreamHeaders = { ...buildUpstreamHeaders(provider, actualModel), "x-request-id": requestId };
         const upstreamBody = buildUpstreamBody(provider, actualModel, body);
         const startTime = Date.now();
