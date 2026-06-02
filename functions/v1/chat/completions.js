@@ -7,7 +7,7 @@
 import {
   corsHeaders, jsonResponse, errorResponse,
   validateApiKey, getProviders, getRoutes,
-  resolveProvider, resolveProviderCandidates, resolveModelAlias, isModelAllowed,
+  resolveProviderCandidates, resolveModelAlias, isModelAllowed,
   buildUpstreamUrl, buildUpstreamHeaders,
   buildUpstreamBody, convertAnthropicResponse, convertGoogleResponse, convertCohereResponse,
   handleStreamRequest, logUsage, gatewayFetch, generateRequestId,

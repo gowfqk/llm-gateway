@@ -11,7 +11,8 @@ import {
 
 export async function onRequestGet(context) {
   // --- 认证 ---
-  if (!(await validateApiKey(context.request, context.env))) {
+  const authResult = await validateApiKey(context.request, context.env);
+  if (!authResult.isValid) {
     return errorResponse("Invalid API key.", 401);
   }
 

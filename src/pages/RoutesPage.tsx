@@ -16,7 +16,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { saveRouteData, deleteRouteData, generateId } from "@/lib/store";
-import type { RouteRule, RouteRouteFallbackCandidate } from "@/types";
+import type { RouteRule, RouteFallbackCandidate } from "@/types";
 import { useState } from "react";
 import { Plus, Pencil, Trash2, ArrowUpDown, ArrowUp, ArrowDown, X, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { useProviders, useRoutes } from "@/hooks/useData";
@@ -39,7 +39,7 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
   const [formTargetProviderId, setFormTargetProviderId] = useState("");
 
   // Fallback-mode form fields
-  const [formCandidates, setFormCandidates] = useState<RouteRouteFallbackCandidate[]>([]);
+  const [formCandidates, setFormCandidates] = useState<RouteFallbackCandidate[]>([]);
   const [expandedCandidates, setExpandedCandidates] = useState<Record<number, boolean>>({});
 
   const resetForm = () => {
@@ -188,7 +188,7 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
 
   const getProviderName = (id: string) => providers.find((p) => p.id === id)?.name || "未知";
 
-  const getCandidateSummary = (candidates: RouteRouteFallbackCandidate[] | undefined) => {
+  const getCandidateSummary = (candidates: RouteFallbackCandidate[] | undefined) => {
     if (!candidates || candidates.length === 0) return "无候选";
     return candidates.map((c) => `${getProviderName(c.providerId)}(${c.models.length})`).join(" → ");
   };
