@@ -439,13 +439,11 @@ export function resolveProvider(model, providers, routes) {
   for (const route of routes) {
     if (!route.enabled) continue;
     if (route.mode === "fallback") {
-      // fallback 模式: 按 ordered_candidates 顺序查找能承载该模型的 provider
-      if (route.ordered_candidates) {
+      // fallback 模式: 先匹配路由 pattern，再按 ordered_candidates 顺序查找可用 provider
+      if (matchPattern(route.pattern, model) && route.ordered_candidates) {
         for (const candidate of route.ordered_candidates) {
-          if (candidate.models && candidate.models.includes(model)) {
-            const provider = providers.find((p) => p.id === candidate.providerId && p.enabled);
-            if (provider) return provider;
-          }
+          const provider = providers.find((p) => p.id === candidate.providerId && p.enabled);
+          if (provider) return provider;
         }
       }
     } else if (matchPattern(route.pattern, model)) {
@@ -482,7 +480,8 @@ export function resolveProvider(model, providers, routes) {
 
 /**
  * 解析所有能承载指定模型的供应商（用于 fallback）
- * 返回按优先级排序的供应商数组
+ * 返回按优先级排序的 { provider, resolvedModel } 数组
+ * resolvedModel 是实际要发送给上游的模型名（fallback 模式下可能是候选的第一个模型）
  */
 export function resolveProviderCandidates(model, providers, routes) {
   const candidates = [];
@@ -492,15 +491,15 @@ export function resolveProviderCandidates(model, providers, routes) {
   for (const route of routes) {
     if (!route.enabled) continue;
     if (route.mode === "fallback") {
-      // fallback 模式: 按 ordered_candidates 顺序收集能承载该模型的 provider
-      if (route.ordered_candidates) {
+      // fallback 模式: 先匹配路由 pattern，再按 ordered_candidates 顺序收集可用 provider
+      if (matchPattern(route.pattern, model) && route.ordered_candidates) {
         for (const candidate of route.ordered_candidates) {
-          if (candidate.models && candidate.models.includes(model)) {
-            const provider = providers.find((p) => p.id === candidate.providerId && p.enabled);
-            if (provider && !seenIds.has(provider.id)) {
-              candidates.push(provider);
-              seenIds.add(provider.id);
-            }
+          const provider = providers.find((p) => p.id === candidate.providerId && p.enabled);
+          if (provider && !seenIds.has(provider.id)) {
+            // 使用候选的第一个模型作为实际模型名；如果没有则用原始模型名
+            const resolvedModel = (candidate.models && candidate.models.length > 0) ? candidate.models[0] : model;
+            candidates.push({ provider, resolvedModel });
+            seenIds.add(provider.id);
           }
         }
       }
@@ -508,7 +507,7 @@ export function resolveProviderCandidates(model, providers, routes) {
       // pattern 模式: 匹配到路由，添加目标 provider
       const provider = providers.find((p) => p.id === route.target_provider_id && p.enabled);
       if (provider && !seenIds.has(provider.id)) {
-        candidates.push(provider);
+        candidates.push({ provider, resolvedModel: model });
         seenIds.add(provider.id);
       }
     }
@@ -518,7 +517,7 @@ export function resolveProviderCandidates(model, providers, routes) {
   for (const provider of providers) {
     if (!provider.enabled || seenIds.has(provider.id)) continue;
     if (provider.models && provider.models.includes(model)) {
-      candidates.push(provider);
+      candidates.push({ provider, resolvedModel: model });
       seenIds.add(provider.id);
     }
   }
@@ -529,7 +528,7 @@ export function resolveProviderCandidates(model, providers, routes) {
     if (provider.models) {
       for (const m of provider.models) {
         if (matchPattern(m, model)) {
-          candidates.push(provider);
+          candidates.push({ provider, resolvedModel: model });
           seenIds.add(provider.id);
           break;
         }
@@ -540,7 +539,7 @@ export function resolveProviderCandidates(model, providers, routes) {
   // 4. 如果没有匹配且只有一个启用供应商
   if (candidates.length === 0) {
     const enabled = providers.filter((p) => p.enabled);
-    if (enabled.length === 1) return enabled;
+    if (enabled.length === 1) return [{ provider: enabled[0], resolvedModel: model }];
   }
 
   return candidates;
