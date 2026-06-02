@@ -99,14 +99,18 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
       }
     } else {
       // fallback mode
+      if (!formPattern) {
+        toast.error("请填写触发模型名");
+        return;
+      }
       const validCandidates = formCandidates.filter((c) => c.providerId && c.models.length > 0);
       if (validCandidates.length === 0) {
         toast.error("请至少添加一个候选供应商");
         return;
       }
       const route: RouteRule = editingRoute
-        ? { ...editingRoute, name: formName, mode: "fallback", orderedCandidates: validCandidates, priority: parseInt(formPriority) || 1, enabled: editingRoute.enabled }
-        : { id: generateId("route"), name: formName, mode: "fallback", orderedCandidates: validCandidates, priority: parseInt(formPriority) || 1, enabled: true };
+        ? { ...editingRoute, name: formName, mode: "fallback", pattern: formPattern, orderedCandidates: validCandidates, priority: parseInt(formPriority) || 1, enabled: editingRoute.enabled }
+        : { id: generateId("route"), name: formName, mode: "fallback", pattern: formPattern, orderedCandidates: validCandidates, priority: parseInt(formPriority) || 1, enabled: true };
 
       if (editingRoute) {
         const updated = routes.map((r) => r.id === editingRoute.id ? route : r);
@@ -308,7 +312,7 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
                 </p>
               </div>
 
-              {formMode === "pattern" && (
+              {formMode === "pattern" ? (
                 <>
                   <div className="space-y-2">
                     <Label>匹配模式 *</Label>
@@ -325,6 +329,12 @@ export default function RoutesPage({ onLogout, userEmail }: { onLogout: () => vo
                     </Select>
                   </div>
                 </>
+              ) : (
+                <div className="space-y-2">
+                  <Label>触发模型名 *</Label>
+                  <Input value={formPattern} onChange={(e) => setFormPattern(e.target.value)} placeholder="例如：fallback" />
+                  <p className="text-xs text-muted-foreground">用户请求此模型名时触发 Fallback 路由，支持通配符如 <code>fallback*</code></p>
+                </div>
               )}
 
               {formMode === "fallback" && (
