@@ -95,10 +95,10 @@ const defaultProviders: Provider[] = [
 ];
 
 const defaultRoutes: RouteRule[] = [
-  { id: "route-1", name: "GPT 默认路由", pattern: "gpt-*", targetProviderId: "openai-1", priority: 1, enabled: true },
-  { id: "route-2", name: "Claude 默认路由", pattern: "claude-*", targetProviderId: "anthropic-1", priority: 2, enabled: true },
-  { id: "route-3", name: "Gemini 默认路由", pattern: "gemini-*", targetProviderId: "google-1", priority: 3, enabled: true },
-  { id: "route-4", name: "DeepSeek 默认路由", pattern: "deepseek-*", targetProviderId: "deepseek-1", priority: 4, enabled: true },
+  { id: "route-1", name: "GPT 默认路由", mode: "pattern", pattern: "gpt-*", targetProviderId: "openai-1", priority: 1, enabled: true },
+  { id: "route-2", name: "Claude 默认路由", mode: "pattern", pattern: "claude-*", targetProviderId: "anthropic-1", priority: 2, enabled: true },
+  { id: "route-3", name: "Gemini 默认路由", mode: "pattern", pattern: "gemini-*", targetProviderId: "google-1", priority: 3, enabled: true },
+  { id: "route-4", name: "DeepSeek 默认路由", mode: "pattern", pattern: "deepseek-*", targetProviderId: "deepseek-1", priority: 4, enabled: true },
 ];
 
 function generateMockUsage(): UsageRecord[] {

@@ -197,8 +197,10 @@ export async function fetchRoutes(userId: string): Promise<RouteRule[]> {
   return (data || []).map((row: Record<string, unknown>) => ({
     id: row.id as string,
     name: row.name as string,
+    mode: (row.mode as string) || "pattern",
     pattern: row.pattern as string,
     targetProviderId: row.target_provider_id as string,
+    orderedCandidates: row.ordered_candidates as Array<{providerId: string; models: string[]}> | undefined,
     priority: row.priority as number,
     enabled: row.enabled as boolean,
   }));
@@ -209,8 +211,10 @@ export async function saveRoute(userId: string, route: RouteRule): Promise<void>
     id: route.id,
     user_id: userId,
     name: route.name,
+    mode: route.mode || "pattern",
     pattern: route.pattern,
     target_provider_id: route.targetProviderId,
+    ordered_candidates: route.orderedCandidates ?? null,
     priority: route.priority,
     enabled: route.enabled,
   });
@@ -253,8 +257,10 @@ export async function batchSaveRoutes(userId: string, routes: RouteRule[]): Prom
       id: r.id,
       user_id: userId,
       name: r.name,
+      mode: r.mode || "pattern",
       pattern: r.pattern,
       target_provider_id: r.targetProviderId,
+      ordered_candidates: r.orderedCandidates ?? null,
       priority: r.priority,
       enabled: r.enabled,
     }))

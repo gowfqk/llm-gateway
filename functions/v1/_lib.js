@@ -437,7 +437,19 @@ function findProviderByIdent(ident, providers) {
 export function resolveProvider(model, providers, routes) {
   // 1. 先匹配路由规则（按优先级）
   for (const route of routes) {
-    if (matchPattern(route.pattern, model)) {
+    if (!route.enabled) continue;
+    if (route.mode === "fallback") {
+      // fallback 模式: 按 ordered_candidates 顺序查找能承载该模型的 provider
+      if (route.ordered_candidates) {
+        for (const candidate of route.ordered_candidates) {
+          if (candidate.models && candidate.models.includes(model)) {
+            const provider = providers.find((p) => p.id === candidate.providerId && p.enabled);
+            if (provider) return provider;
+          }
+        }
+      }
+    } else if (matchPattern(route.pattern, model)) {
+      // pattern 模式: 匹配到路由，返回目标 provider
       const provider = providers.find((p) => p.id === route.target_provider_id && p.enabled);
       if (provider) return provider;
     }
@@ -476,9 +488,24 @@ export function resolveProviderCandidates(model, providers, routes) {
   const candidates = [];
   const seenIds = new Set();
 
-  // 1. 路由规则匹配（按优先级）
+  // 1. 路由规则匹配（按优先级，启用的优先）
   for (const route of routes) {
-    if (matchPattern(route.pattern, model)) {
+    if (!route.enabled) continue;
+    if (route.mode === "fallback") {
+      // fallback 模式: 按 ordered_candidates 顺序收集能承载该模型的 provider
+      if (route.ordered_candidates) {
+        for (const candidate of route.ordered_candidates) {
+          if (candidate.models && candidate.models.includes(model)) {
+            const provider = providers.find((p) => p.id === candidate.providerId && p.enabled);
+            if (provider && !seenIds.has(provider.id)) {
+              candidates.push(provider);
+              seenIds.add(provider.id);
+            }
+          }
+        }
+      }
+    } else if (matchPattern(route.pattern, model)) {
+      // pattern 模式: 匹配到路由，添加目标 provider
       const provider = providers.find((p) => p.id === route.target_provider_id && p.enabled);
       if (provider && !seenIds.has(provider.id)) {
         candidates.push(provider);

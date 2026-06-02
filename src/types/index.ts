@@ -68,12 +68,21 @@ export interface UsageRecord {
   latency: number; // ms
 }
 
+export interface RouteRouteFallbackCandidate {
+  providerId: string; // 供应商 ID
+  models: string[];   // 该供应商下可承载的模型列表
+}
+
 export interface RouteRule {
   id: string;
   name: string;
-  pattern: string; // e.g., "gpt-*"
-  targetProviderId: string;
-  priority: number;
+  mode: "pattern" | "fallback"; // 模式：pattern=正则匹配模型名，fallback=依次尝试供应商模型列表
+  // pattern 模式字段
+  pattern?: string; // e.g., "gpt-*"（mode=fallback 时不用）
+  targetProviderId?: string; // 模式匹配的目标供应商（mode=fallback 时不用）
+  // fallback 模式字段
+  orderedCandidates?: RouteRouteFallbackCandidate[]; // 按优先顺序排列的候选供应商+模型
+  priority?: number; // fallback 模式下按此数字排序
   enabled: boolean;
 }
 
