@@ -6,7 +6,7 @@
  */
 import {
   corsHeaders, jsonResponse, errorResponse,
-  validateApiKey, getProviders,
+  validateApiKey, getProviders, getRoutes,
 } from "./_lib.js";
 
 export async function onRequestGet(context) {
@@ -16,7 +16,10 @@ export async function onRequestGet(context) {
   }
 
   try {
-    const providers = await getProviders(context.env);
+    const [providers, routes] = await Promise.all([
+      getProviders(context.env),
+      getRoutes(context.env),
+    ]);
 
     if (!providers || providers.length === 0) {
       return jsonResponse({
@@ -25,12 +28,37 @@ export async function onRequestGet(context) {
       });
     }
 
-    // 构建模型列表
+    const seenModels = new Set();
     const models = [];
+
+    // 1. 先添加路由规则中的 pattern（包括 fallback 的触发模型名）
+    for (const route of (routes || [])) {
+      if (!route.enabled || !route.pattern) continue;
+      if (seenModels.has(route.pattern)) continue;
+      seenModels.add(route.pattern);
+      models.push({
+        id: route.pattern,
+        object: "model",
+        created: Math.floor(new Date(route.created_at || Date.now()).getTime() / 1000),
+        owned_by: "route",
+        permission: [],
+        root: route.pattern,
+        parent: null,
+        _gateway: {
+          routeId: route.id,
+          routeName: route.name,
+          routeMode: route.mode,
+        },
+      });
+    }
+
+    // 2. 再添加供应商的实际模型
     for (const provider of providers) {
       if (!provider.enabled) continue;
       const providerModels = provider.models || [];
       for (const modelId of providerModels) {
+        if (seenModels.has(modelId)) continue;
+        seenModels.add(modelId);
         models.push({
           id: modelId,
           object: "model",
